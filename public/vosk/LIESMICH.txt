@@ -1,0 +1,11 @@
+Spracherkennung für die Sprech-Probe (Test)
+
+vosk.js
+  vosk-browser 0.0.8 von Ciaran O'Reilly (https://github.com/ccoreilly/vosk-browser)
+  Lizenz: Apache License 2.0. Läuft komplett im Browser (WebAssembly).
+
+vosk-model-small-de-0.15.tar.gz.teil1 und .teil2
+  Deutsches Sprachmodell von Alpha Cephei (https://alphacephei.com/vosk/models), Lizenz: Apache License 2.0.
+  Aus vosk-model-small-de-0.15.zip als .tar.gz gepackt und in zwei Teile geteilt; die App setzt sie im Browser wieder zusammen.
+
+Ohne Modell zeigt die Sprech-Probe einen Hinweis und läuft mit Selbstkontrolle weiter.
