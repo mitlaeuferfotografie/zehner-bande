@@ -42,6 +42,8 @@ jobs:
           cp -r public/fonts _site/fonts
           # Spracherkennung (Test): Skript und Sprachmodell mit ausliefern, falls vorhanden
           if [ -d public/vosk ]; then cp -r public/vosk _site/vosk; fi
+          # Zahlen-Ansage (aufgenommene Stimmen)
+          if [ -d public/audio ]; then cp -r public/audio _site/audio; fi
           node -e "
             const fs = require('fs');
             let h = fs.readFileSync('public/index.html', 'utf8');

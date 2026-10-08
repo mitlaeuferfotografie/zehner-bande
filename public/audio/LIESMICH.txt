@@ -1,0 +1,12 @@
+Zahlen-Ansage der Zehner-Bande
+
+thorsten/1.mp3 … 100.mp3   Stimme „Thorsten“ (Mann), Standard
+ramona/1.mp3 … 100.mp3     Stimme „Ramona“ (Frau)
+
+Erzeugt mit Piper (https://github.com/rhasspy/piper, MIT-Lizenz) aus den deutschen Piper-Stimmen v0.0.2:
+- de-thorsten-low: Sprachdaten Thorsten-Voice von Thorsten Müller, Lizenz CC0
+- de-ramona-low: Sprachdaten M-AILABS Speech Dataset (https://www.caito.de/2019/01/03/the-m-ailabs-speech-dataset/), Lizenz laut Quelle
+
+Einstellungen: etwas langsamer gesprochen (length_scale 1,35 bzw. 1,45), 0,35 s Stille vor jedem Wort (damit Tablets den Anfang
+nicht abschneiden), Lautstärke angeglichen, MP3 mono 24 kHz 48 kbit/s.
+Jede Datei wurde mit der Spracherkennung (Vosk) gegengeprüft: Thorsten 100/100, Ramona 99–100/100 verständlich.

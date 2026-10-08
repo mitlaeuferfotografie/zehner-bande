@@ -153,7 +153,7 @@ const SettingsContext = createContext(null);
 const useSettings = () => useContext(SettingsContext);
 
 function readUrlSettings() {
-  const out = { maxN: 100, blitzMs: 3000, speechOn: false };
+  const out = { maxN: 100, blitzMs: 3000, speechOn: false, voiceChoice: 'thorsten' };
   try {
     const p = new URLSearchParams(window.location.search);
     const zr = parseInt(p.get('zr'), 10);
@@ -161,6 +161,7 @@ function readUrlSettings() {
     const b = parseInt(p.get('blitz'), 10);
     if ([0, 1, 2, 3].includes(b)) out.blitzMs = b * 1000;
     if (p.get('sprache') === '1') out.speechOn = true;
+    if (['thorsten', 'ramona', 'geraet'].includes(p.get('stimme'))) out.voiceChoice = p.get('stimme');
   } catch (e) { /* ohne URL-Parameter */ }
   return out;
 }
@@ -184,18 +185,71 @@ function useLocalGermanVoices() {
   return voices;
 }
 
+// ---------- Zahlen-Ansage mit aufgenommenen Stimmen ----------
+// Die Zahlwörter 1–100 liegen als kleine MP3-Dateien in public/audio/<stimme>/<zahl>.mp3 (Piper-Stimmen, CC0 bzw. M-AILABS,
+// mit 0,35 s Stille davor, damit Tablets den Anfang nicht abschneiden). Abgespielt wird über Web Audio:
+// Das Tonsystem wird beim ersten Antippen „aufgeweckt“ und bleibt wach – so fehlen keine Wortanfänge.
+const FILE_VOICES = [
+  { id: 'thorsten', label: 'Thorsten (Mann)' },
+  { id: 'ramona', label: 'Ramona (Frau)' }
+];
+let playCtx = null;
+const audioBuffers = new Map();
+let currentSource = null;
+function getPlayCtx() {
+  if (typeof window === 'undefined') return null;
+  if (!playCtx) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; playCtx = new C(); }
+  if (playCtx.state === 'suspended' && playCtx.resume) playCtx.resume().catch(() => {});
+  return playCtx;
+}
+if (typeof window !== 'undefined') {
+  const unlock = () => {
+    const c = getPlayCtx(); if (!c) return;
+    try { const b = c.createBuffer(1, 1, 22050); const src = c.createBufferSource(); src.buffer = b; src.connect(c.destination); src.start(0); } catch (e) { /* egal */ }
+  };
+  ['pointerdown', 'touchend', 'keydown'].forEach(ev => window.addEventListener(ev, unlock, { passive: true }));
+}
+function loadNumberAudio(voiceId, n) {
+  const key = `${voiceId}/${n}`;
+  if (audioBuffers.has(key)) return audioBuffers.get(key);
+  const ctx = getPlayCtx();
+  const pr = fetch(`audio/${voiceId}/${n}.mp3`)
+    .then((r) => { if (!r.ok) throw new Error('fehlt'); return r.arrayBuffer(); })
+    .then(ab => new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej)));
+  pr.catch(() => audioBuffers.delete(key));
+  audioBuffers.set(key, pr);
+  return pr;
+}
+function playNumber(voiceId, n) {
+  const ctx = getPlayCtx();
+  if (!ctx) return Promise.reject(new Error('kein Ton'));
+  return loadNumberAudio(voiceId, n).then((buf) => {
+    if (currentSource) { try { currentSource.stop(); } catch (e) { /* schon fertig */ } }
+    const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination); src.start(); currentSource = src;
+  });
+}
+function speakWithDevice(voice, text) {
+  if (!voice || !('speechSynthesis' in window)) return false;
+  try {
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.voice = voice; u.lang = voice.lang || 'de-DE'; u.rate = 0.8; u.pitch = 1.05;
+    window.speechSynthesis.speak(u);
+    return true;
+  } catch (e) { return false; }
+}
+
 function useSpeak() {
-  const { voice, audioOn } = useSettings();
+  const { voice, audioOn, voiceChoice } = useSettings();
   return useCallback((text) => {
-    if (!audioOn || !voice || !('speechSynthesis' in window)) return false;
-    try {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.voice = voice; u.lang = voice.lang || 'de-DE'; u.rate = 0.82; u.pitch = 1.05;
-      window.speechSynthesis.speak(u);
+    if (!audioOn) return false;
+    const n = SPOKEN_NUMBERS.get(text);
+    if (voiceChoice !== 'geraet' && n) {
+      playNumber(voiceChoice, n).catch(() => speakWithDevice(voice, text));
       return true;
-    } catch (e) { return false; }
-  }, [voice, audioOn]);
+    }
+    return speakWithDevice(voice, text);
+  }, [voice, audioOn, voiceChoice]);
 }
 
 // ==========================================
@@ -505,13 +559,13 @@ function useRound(onFinish) {
 
 // Start-Bildschirm für Hör-Übungen (iPads erlauben Vorlesen erst nach einem Antippen)
 function AudioStart({ onStart, title, children }) {
-  const { audioOn, voice } = useSettings();
+  const { hasAudio } = useSettings();
   return (
     <div className="text-center py-6">
       <Headphones className="w-16 h-16 mx-auto text-indigo-600 anim-float" />
       <h3 className="text-2xl font-black text-indigo-950 mt-2">{title}</h3>
       <p className="text-slate-600 mt-2 max-w-md mx-auto">{children}</p>
-      {!(audioOn && voice) && (
+      {!hasAudio && (
         <p className="mt-4 max-w-md mx-auto bg-amber-100 border-2 border-amber-400 text-amber-900 rounded-2xl p-3 text-sm">Auf diesem Gerät ist keine deutsche Vorlese-Stimme eingeschaltet. Die Zahl wird darum als <b>Wort geschrieben</b> – du liest sie dann selbst.</p>
       )}
       <button onClick={onStart} className="mt-6 bg-yellow-400 hover:bg-yellow-300 text-indigo-950 font-black text-2xl py-4 px-12 rounded-2xl shadow-[0_4px_0_#ca8a04] active:translate-y-1 active:shadow-none">Los geht’s!</button>
@@ -521,8 +575,8 @@ function AudioStart({ onStart, title, children }) {
 
 // Zeigt das Zahlwort, wenn keine Stimme da ist – sonst einen großen Hör-Knopf
 function NumberPrompt({ n }) {
-  const { audioOn, voice } = useSettings();
-  if (audioOn && voice) return <SpeakButton text={zahlwort(n)} big label="Hör zu" />;
+  const { hasAudio } = useSettings();
+  if (hasAudio) return <SpeakButton text={zahlwort(n)} big label="Hör zu" />;
   return <div className="inline-block bg-white border-4 border-indigo-900 rounded-2xl px-6 py-3 text-3xl md:text-4xl font-black text-indigo-950 break-all">{zahlwort(n)}</div>;
 }
 
@@ -544,6 +598,9 @@ function BlitzblickGame({ onFinish, onShowTip }) {
   const [answer, setAnswer] = useState('');
   const [lastAnswer, setLastAnswer] = useState(null);
   const [mode, setMode] = useState('stift'); // stift | tasten
+  const [peeks, setPeeks] = useState(0); // wie oft nochmal angeschaut (max. 3, danach bleibt das Bild stehen)
+  const [peeking, setPeeking] = useState(false);
+  const MAX_PEEKS = 3;
   const streak = useStreak(onShowTip, 'Schau zuerst auf die vollen Reihen: Jede volle Reihe ist ein Zehner – wie eine blaue Zehnerstange. Zähle die Reihen – dann die einzelnen Punkte. Die Lücke in der Mitte hilft: 5 und 5 sind 10!');
   const task = tasks[idx];
   const timer = useRef(null);
@@ -557,13 +614,24 @@ function BlitzblickGame({ onFinish, onShowTip }) {
   const check = () => checkValue(parseInt(answer, 10));
   const checkValue = (a) => {
     const ok = a === task.n;
-    record(ok); track('erfassen', ok);
+    record(ok);
+    // „Mengen auf einen Blick erfassen“ zählt nur ohne Nochmal-Ansehen (sonst misst es nicht mehr den schnellen Blick)
+    if (peeks === 0) track('erfassen', ok);
     ok ? streak.good() : streak.bad();
     setLastAnswer(a); setPhase('done');
   };
-  const goNext = () => { setAnswer(''); setLastAnswer(null); setPhase('ready'); next(); };
+  const goNext = () => { setAnswer(''); setLastAnswer(null); setPhase('ready'); setPeeks(0); setPeeking(false); next(); };
+  const peek = () => {
+    if (peeks >= MAX_PEEKS) return;
+    const k = peeks + 1;
+    setPeeks(k);
+    if (k >= MAX_PEEKS || blitzMs === 0) return; // beim 3. Mal bleibt das Bild stehen
+    setPeeking(true);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setPeeking(false), blitzMs);
+  };
 
-  const visible = phase === 'show' || phase === 'done' || (phase === 'answer' && blitzMs === 0);
+  const visible = phase === 'show' || phase === 'done' || (phase === 'answer' && (blitzMs === 0 || peeking || peeks >= MAX_PEEKS));
   const fieldSize = 300;
   const rowsVisible = maxN <= 20 ? 2 : maxN <= 50 ? 5 : 10;
   const figure = task.view === 'material'
@@ -573,7 +641,7 @@ function BlitzblickGame({ onFinish, onShowTip }) {
   return (
     <div>
       {flash && <div className="blitz-flash" />}
-      <GameHead icon={Eye} title="Blitzblick">Wie viele sind es? Schau genau – gleich ist das Bild weg!</GameHead>
+      <GameHead icon={Eye} title="Wie viele sind es?">Schau genau – gleich ist das Bild weg!</GameHead>
       <RoundDots current={idx} total={ROUND} results={results} />
       <div className="flex flex-col lg:flex-row items-center justify-center gap-6">
         <div className="relative bg-white rounded-3xl border-4 border-indigo-900 p-4 min-h-[260px] min-w-[280px] flex items-center justify-center shadow-[6px_6px_0_rgba(30,27,75,0.25)]">
@@ -581,17 +649,23 @@ function BlitzblickGame({ onFinish, onShowTip }) {
             <div className="flex flex-col items-center justify-center text-indigo-300">
               <Zap className="w-24 h-24 fill-yellow-300 text-yellow-400 anim-bolt" />
               {phase === 'answer' && <span className="text-indigo-900 font-black mt-2">Wie viele waren es?</span>}
+              {phase === 'answer' && blitzMs > 0 && peeks < MAX_PEEKS && (
+                <button onClick={peek} className="mt-3 inline-flex items-center gap-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-black px-4 py-2 rounded-full active:scale-95">
+                  <Eye className="w-5 h-5" /> Nochmal ansehen <span className="text-xs font-bold opacity-70">(noch {MAX_PEEKS - peeks}×)</span>
+                </button>
+              )}
             </div>
           )}
         </div>
         <div className="w-full max-w-xs">
           {phase === 'ready' && (
             <div className="text-center">
-              <button onClick={startBlitz} className="bg-yellow-400 hover:bg-yellow-300 text-indigo-950 font-black text-3xl py-6 px-10 rounded-3xl shadow-[0_5px_0_#ca8a04] active:translate-y-1 active:shadow-none inline-flex items-center gap-3"><Zap className="w-9 h-9 fill-indigo-950" /> Blitz!</button>
+              <button onClick={startBlitz} className="bg-yellow-400 hover:bg-yellow-300 text-indigo-950 font-black text-3xl py-6 px-10 rounded-3xl shadow-[0_5px_0_#ca8a04] active:translate-y-1 active:shadow-none inline-flex items-center gap-3"><Eye className="w-9 h-9" /> Zeig her!</button>
               <p className="text-slate-500 mt-3 text-sm">{blitzMs ? `Das Bild bleibt ${blitzMs / 1000} Sekunde${blitzMs > 1000 ? 'n' : ''} stehen.` : 'Das Bild bleibt stehen.'}</p>
             </div>
           )}
           {phase === 'show' && blitzMs > 0 && <p className="text-center text-2xl font-black text-indigo-900">Schau genau …</p>}
+          {phase === 'answer' && peeks >= MAX_PEEKS && <p className="text-center text-sm font-bold text-indigo-500 mb-2">Jetzt bleibt das Bild stehen. Zähle in Ruhe!</p>}
           {(phase === 'answer' || (phase === 'show' && blitzMs === 0)) && (
             <div className="flex flex-col items-center gap-2">
               {mode === 'stift'
@@ -946,7 +1020,7 @@ function WritePad({ label, color, light, dark, onResult, disabled, resetKey, siz
   );
 }
 
-// Schreibfelder: zuerst Zehner, dann Einer (optional Hunderter-Feld, z. B. im Blitzblick für die 100).
+// Schreibfelder: zuerst Zehner, dann Einer (optional Hunderter-Feld, z. B. in „Wie viele sind es?“ für die 100).
 // optional = Z und H dürfen leer bleiben (für einstellige Zahlen); das E-Feld muss immer beschrieben sein.
 function HandwriteNumber({ onSubmit, disabled, withH = false, optional = false }) {
   const [rh, setRh] = useState(null);
@@ -1413,7 +1487,7 @@ function useNumberListener(enabled) {
 // ÜBUNG 8: SPRECH-PROBE – Zahl laut sprechen; Selbstkontrolle oder (Test) Spracherkennung
 // ==========================================
 function SprechenGame({ onFinish }) {
-  const { maxN, audioOn, voice, speechOn } = useSettings();
+  const { maxN, hasAudio, speechOn } = useSettings();
   const speak = useSpeak();
   const [tasks] = useState(() => { const main = practiceNumbers(ROUND - 2, maxN); return shuffle([...main, ...pickNumbers(2, 13, 19, n => !main.includes(n))]); });
   const { idx, results, record, next } = useRound(onFinish);
@@ -1476,14 +1550,14 @@ function SprechenGame({ onFinish }) {
       {(!useMic || mic.state === 'error') && !revealed && (
         <div className="text-center mt-6">
           <p className="text-2xl font-black text-indigo-950 mb-4">🗣️ Sprich die Zahl laut aus!</p>
-          <button onClick={reveal} className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xl py-4 px-10 rounded-2xl inline-flex items-center gap-3 active:scale-95">{audioOn && voice ? <Volume2 className="w-7 h-7" /> : <Eye className="w-7 h-7" />} Gesagt! Jetzt {audioOn && voice ? 'anhören' : 'nachschauen'}</button>
+          <button onClick={reveal} className="bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xl py-4 px-10 rounded-2xl inline-flex items-center gap-3 active:scale-95">{hasAudio ? <Volume2 className="w-7 h-7" /> : <Eye className="w-7 h-7" />} Gesagt! Jetzt {hasAudio ? 'anhören' : 'nachschauen'}</button>
         </div>
       )}
       {revealed && rated === null && (
         <div className="text-center mt-6 anim-pop">
           {heard && <p className="text-slate-600 mb-2">{heard.num ? <>Ich habe zweimal etwas anderes gehört. Vielleicht habe ich mich verhört.</> : <>Ich konnte dich leider nicht verstehen.</>}</p>}
           <p className="text-4xl font-black text-indigo-950">{zahlwort(n)}</p>
-          {audioOn && voice && <div className="mt-2"><SpeakButton text={zahlwort(n)} /></div>}
+          {hasAudio && <div className="mt-2"><SpeakButton text={zahlwort(n)} /></div>}
           <p className="text-lg font-bold text-slate-600 mt-4">Hast du es genauso gesagt?</p>
           <div className="flex justify-center gap-4 mt-3">
             <button onClick={() => rate(true)} className="bg-lime-500 hover:bg-lime-400 text-white font-black text-xl py-4 px-8 rounded-2xl active:scale-95">👍 Ja, genau so</button>
@@ -1507,7 +1581,7 @@ function SprechenGame({ onFinish }) {
 // SPIELE, LERNPFADE, FREISCHALTEN
 // ==========================================
 const GAMES = [
-  { id: 'blitzblick', title: 'Blitzblick', desc: 'Wie viele? Auf einen Blick!', icon: Eye, color: 'yellow', comp: BlitzblickGame, badge: { name: 'Adlerauge', emoji: '🦅' } },
+  { id: 'blitzblick', title: 'Wie viele sind es?', desc: 'Schau genau und zähle schlau!', icon: Eye, color: 'yellow', comp: BlitzblickGame, badge: { name: 'Adlerauge', emoji: '🦅' } },
   { id: 'zeigen', title: 'Zahlen zeigen', desc: 'Im Hunderterfeld zeigen', icon: Grid3x3, color: 'amber', comp: ZeigenGame, badge: { name: 'Zeige-Profi', emoji: '👉' } },
   { id: 'legen', title: 'Zahl legen', desc: 'Zehner und Einer legen', icon: Blocks, color: 'blue', comp: LegenGame, badge: { name: 'Baumeister', emoji: '🏗️' } },
   { id: 'schreiben', title: 'Zahl schreiben', desc: 'Mit dem Finger schreiben', icon: PenLine, color: 'indigo', comp: SchreibenGame, badge: { name: 'Stellenwert-Star', emoji: '⭐' } },
@@ -1616,7 +1690,7 @@ function RulesModal({ onClose }) {
         <Rule nr={1} title="Zehner und Einer">Die Zahl <ColorNumber n={47} className="font-black text-xl" /> hat <b style={{ color: '#60a5fa' }}>4 Zehner</b> und <b style={{ color: '#4ade80' }}>7 Einer</b>. Zacki ist eine Zehnerstange, Emil ist ein Einerwürfel.</Rule>
         <Rule nr={2} title="Sprechen: Einer zuerst">Wir sagen <i>sieben-und-vierzig</i>. Die Einer hört man zuerst!</Rule>
         <Rule nr={3} title="Schreiben: Zehner zuerst">Wir schreiben trotzdem zuerst die <b style={{ color: '#60a5fa' }}>4</b>, dann die <b style={{ color: '#4ade80' }}>7</b>. Hör erst bis zum Ende zu – dann schreib.</Rule>
-        <Rule nr={4} title="Blitzblick-Trick">Volle Reihen sind Zehner (blau). Ist das ganze Feld voll, ist es 1 Hunderter (rot). Die Lücke in der Mitte hilft: 5 und 5 sind 10. Zähle erst die Reihen, dann die einzelnen Punkte.</Rule>
+        <Rule nr={4} title="Trick fürs schnelle Sehen">Volle Reihen sind Zehner (blau). Ist das ganze Feld voll, ist es 1 Hunderter (rot). Die Lücke in der Mitte hilft: 5 und 5 sind 10. Zähle erst die Reihen, dann die einzelnen Punkte.</Rule>
         <Rule nr={5} title="Besondere Zahlwörter"><b>elf, zwölf</b> · <b>sechzehn</b> (ohne s) · <b>siebzehn</b> (ohne en) · <b>dreißig</b> (mit ß)</Rule>
       </div>
     </Modal>
@@ -1793,15 +1867,13 @@ function AdminAuthModal({ onLogin, onClose, onImpressum }) {
 
 function AdminControlModal({ onClose, gameProgress, setGameProgress, setSkillLog, settings, setSettings, voices, onOpenSheets }) {
   const [copied, setCopied] = useState(false);
-  const speakTest = () => {
+  const speakTest = (choice) => {
+    if (choice !== 'geraet') { playNumber(choice, 47).catch(() => {}); return; }
     const v = voices.find(x => x.voiceURI === settings.voiceURI) || voices[0];
-    if (!v) return;
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance('siebenundvierzig'); u.voice = v; u.lang = v.lang; u.rate = 0.82;
-    window.speechSynthesis.speak(u);
+    speakWithDevice(v, 'siebenundvierzig');
   };
   const link = (() => {
-    try { const url = new URL(window.location.href); url.search = `?zr=${settings.maxN}&blitz=${settings.blitzMs / 1000}${settings.speechOn ? '&sprache=1' : ''}`; url.hash = ''; return url.toString(); } catch (e) { return ''; }
+    try { const url = new URL(window.location.href); url.search = `?zr=${settings.maxN}&blitz=${settings.blitzMs / 1000}${settings.voiceChoice !== 'thorsten' ? `&stimme=${settings.voiceChoice}` : ''}${settings.speechOn ? '&sprache=1' : ''}`; url.hash = ''; return url.toString(); } catch (e) { return ''; }
   })();
   const Seg = ({ value, options, onChange }) => (
     <div className="flex bg-slate-950 rounded-xl p-1 gap-1">
@@ -1816,17 +1888,22 @@ function AdminControlModal({ onClose, gameProgress, setGameProgress, setSkillLog
           <h4 className="font-black text-cyan-300">Einstellungen</h4>
           <label className="text-sm text-slate-400">Zahlenraum</label>
           <Seg value={settings.maxN} options={[{ v: 20, l: 'bis 20' }, { v: 50, l: 'bis 50' }, { v: 100, l: 'bis 100' }]} onChange={v => setSettings(s => ({ ...s, maxN: v }))} />
-          <label className="text-sm text-slate-400">Blitzblick: Bild sichtbar</label>
+          <label className="text-sm text-slate-400">„Wie viele sind es?“: Bild sichtbar</label>
           <Seg value={settings.blitzMs} options={[{ v: 1000, l: '1 s' }, { v: 2000, l: '2 s' }, { v: 3000, l: '3 s' }, { v: 0, l: 'immer' }]} onChange={v => setSettings(s => ({ ...s, blitzMs: v }))} />
-          <label className="text-sm text-slate-400">Vorlese-Stimme (nur Stimmen auf diesem Gerät)</label>
-          {voices.length ? (
-            <div className="flex gap-2">
-              <select value={settings.voiceURI || voices[0].voiceURI} onChange={ev => setSettings(s => ({ ...s, voiceURI: ev.target.value }))} className="flex-1 bg-slate-950 border border-slate-700 rounded-xl p-2 text-sm">
-                {voices.map(v => <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>)}
-              </select>
-              <button onClick={speakTest} className="bg-slate-700 rounded-xl px-3" title="Probe hören"><Volume2 className="w-5 h-5" /></button>
-            </div>
-          ) : <p className="text-amber-300 text-sm">Auf diesem Gerät wurde keine deutsche Offline-Stimme gefunden. Die Hör-Übungen zeigen dann das Zahlwort zum Lesen.</p>}
+          <label className="text-sm text-slate-400">Vorlese-Stimme für die Zahlen</label>
+          <div className="flex flex-col gap-1.5">
+            {[...FILE_VOICES, { id: 'geraet', label: 'Stimme des Geräts' }].map(o => (
+              <div key={o.id} className="flex items-center gap-2">
+                <button onClick={() => setSettings(s => ({ ...s, voiceChoice: o.id }))} className={`flex-1 text-left py-2 px-3 rounded-lg text-sm font-bold ${settings.voiceChoice === o.id ? 'bg-cyan-500 text-slate-950' : 'bg-slate-950 text-slate-300 hover:bg-slate-800'}`}>{o.label}{o.id === 'thorsten' ? ' – am deutlichsten' : ''}</button>
+                <button onClick={() => speakTest(o.id)} disabled={o.id === 'geraet' && !voices.length} className="bg-slate-700 rounded-lg p-2 disabled:opacity-30" title="Probe hören"><Volume2 className="w-4 h-4" /></button>
+              </div>
+            ))}
+          </div>
+          {settings.voiceChoice === 'geraet' && (voices.length ? (
+            <select value={settings.voiceURI || voices[0].voiceURI} onChange={ev => setSettings(s => ({ ...s, voiceURI: ev.target.value }))} className="bg-slate-950 border border-slate-700 rounded-xl p-2 text-sm">
+              {voices.map(v => <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>)}
+            </select>
+          ) : <p className="text-amber-300 text-sm">Auf diesem Gerät gibt es keine deutsche Offline-Stimme. Ohne Stimme zeigen die Hör-Übungen das Zahlwort zum Lesen.</p>)}
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={settings.audioOn} onChange={ev => setSettings(s => ({ ...s, audioOn: ev.target.checked }))} /> Vorlesen eingeschaltet</label>
           <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={settings.speechOn} onChange={ev => setSettings(s => ({ ...s, speechOn: ev.target.checked }))} /> <span>Spracherkennung in der Sprech-Probe <span className="bg-amber-500 text-slate-950 text-xs font-black px-1.5 rounded">TEST</span><br /><span className="text-xs text-slate-400">Läuft auf dem Gerät, die Stimme wird nicht übertragen. Lädt beim ersten Mal ca. 50 MB. Braucht die Mikrofon-Freigabe.</span></span></label>
           <p className="text-xs text-slate-500">Einstellungen gelten, bis die Seite neu geladen wird. Dauerhaft für die Klasse: diesen Link (oder QR-Code) verwenden:</p>
@@ -2147,7 +2224,7 @@ export default function App() {
   const [settings, setSettings] = useState(() => ({ ...readUrlSettings(), audioOn: true, voiceURI: null }));
 
   const voice = useMemo(() => voices.find(v => v.voiceURI === settings.voiceURI) || voices.find(v => /de[-_]DE/i.test(v.lang)) || voices[0] || null, [voices, settings.voiceURI]);
-  const settingsValue = useMemo(() => ({ ...settings, voice, audioOn: settings.audioOn }), [settings, voice]);
+  const settingsValue = useMemo(() => ({ ...settings, voice, audioOn: settings.audioOn, hasAudio: settings.audioOn && (settings.voiceChoice !== 'geraet' || !!voice) }), [settings, voice]);
 
   const globalScore = GAMES.reduce((a, g) => a + (gameProgress[g.id]?.score || 0), 0);
 
@@ -2324,7 +2401,7 @@ export default function App() {
 }
 
 const GAME_HELP = {
-  blitzblick: 'Tippe auf „Blitz!“. Das Bild erscheint kurz. Wie viele Punkte oder Würfel waren es? Schreib die Zahl mit dem Finger: Zehner ins Feld Z, Einer ins Feld E (das Feld H brauchst du nur für die 100). Tipp: Volle Reihen und Stangen sind Zehner.',
+  blitzblick: 'Tippe auf „Zeig her!“. Das Bild erscheint kurz. Mit „Nochmal ansehen“ kannst du es noch dreimal anschauen, danach bleibt es stehen. Wie viele Punkte oder Würfel waren es? Schreib die Zahl mit dem Finger: Zehner ins Feld Z, Einer ins Feld E (das Feld H brauchst du nur für die 100). Tipp: Volle Reihen und Stangen sind Zehner.',
   zeigen: 'Tippe im Hunderterfeld auf den Punkt, bis zu dem die Zahl reicht. Alle Punkte davor werden mit angemalt. Mit −1 und +1 kannst du verbessern.',
   legen: 'Zieh blaue Zehnerstangen und grüne Einerwürfel vom Material-Tisch auf die Lege-Matte. Zum Zurücklegen ziehst du sie zurück auf den Tisch. Antippen geht auch. Liegen 10 Einer auf der Matte, tauschst du sie gegen 1 Zehnerstange.',
   schreiben: 'Schau dir die Aufgabe an und schreib die Zahl mit dem Finger: zuerst die Zehner ins Feld Z, dann die Einer ins Feld E. Unter dem Feld steht, welche Ziffer die App liest. Stimmt sie nicht, wisch sie weg und schreib neu. Du kannst auch auf „Lieber tippen“ gehen.',
