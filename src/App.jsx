@@ -1246,7 +1246,7 @@ function ZahlwortGame({ onFinish, onShowTip }) {
 }
 
 // ==========================================
-// ÜBUNG 8: SPRECH-PROBE – Zahl laut sprechen, dann selbst kontrollieren
+// SPRECH-PROBE: Hilfsfunktionen (Übung 8 folgt weiter unten)
 // ==========================================
 // ==========================================
 // SPRACHERKENNUNG (TEST) – Vosk läuft im Browser, das Sprachmodell wird mit der App ausgeliefert.
@@ -1285,16 +1285,17 @@ const SPOKEN_NUMBERS = (() => {
   m.set('einhundert', 100); m.set('ein', 1); m.set('eine', 1);
   return m;
 })();
-const NUMBER_GRAMMAR = (() => {
-  const g = new Set();
-  for (let n = 1; n <= 100; n++) {
-    g.add(zahlwort(n));
-    const z = zOf(n), e = eOf(n);
-    if (n > 20 && n < 100 && e) g.add(`${ONES_COMPOUND[e]} und ${TENS[z]}`);
-  }
-  g.add('einhundert'); g.add('[unk]');
-  return JSON.stringify([...g]);
-})();
+// Kleine Wortliste pro Aufgabe: Zielzahl, Zahlendreher, Nachbarzahlen (±1, ±10) und ein paar andere Zahlen.
+// So kann die Erkennung Zahlendreher sicher unterscheiden, rät aber seltener daneben als mit allen 100 Zahlen
+// (Messung mit Computerstimme: 28/34 richtig, 1–2 falsch, Zahlendreher 16/16 erkannt, nie fälschlich „richtig“).
+function grammarFor(n) {
+  const set = new Set([n]);
+  const z = zOf(n), e = eOf(n);
+  if (n < 100 && e && z !== e && e * 10 + z >= 10) set.add(e * 10 + z);
+  [1, -1, 10, -10].forEach(d => { if (n + d >= 10 && n + d <= 100) set.add(n + d); });
+  while (set.size < 12) set.add(randInt(10, 99));
+  return JSON.stringify([...set].map(zahlwort).concat(['[unk]']));
+}
 function parseSpokenNumber(text) {
   const t = (text || '').toLowerCase().replace(/\[unk\]/g, ' ').replace(/[^a-zäöüß ]/g, ' ').replace(/\s+/g, ' ').trim();
   if (!t) return null;
@@ -1304,19 +1305,25 @@ function parseSpokenNumber(text) {
   return SPOKEN_NUMBERS.has(joined) ? SPOKEN_NUMBERS.get(joined) : null;
 }
 
+// Mikrofon + Erkennung. Verbesserungen nach dem ersten Praxistest (08.10.2026):
+// 1. Das Mikrofon bleibt während der Übung an und puffert die letzte Sekunde → der Wortanfang geht nicht verloren,
+//    auch wenn das Kind sofort nach dem Antippen spricht.
+// 2. Es wird bis zu einer kurzen Pause nach dem Sprechen weitergehört (nicht beim ersten Wortteil abgebrochen).
+// 3. Unsichere Ergebnisse (Wort-Sicherheit unter MIN_CONF) gelten als „nicht verstanden“, statt eine Zahl zu raten.
+const MIN_CONF = 0.8;
+const PREROLL_SECONDS = 1.0;
 function useNumberListener(enabled) {
   const [state, setState] = useState(enabled ? 'loading' : 'off'); // off | loading | ready | listening | error
   const [error, setError] = useState('');
   const model = useRef(null);
-  const res = useRef({});
-  const stop = useCallback(() => {
-    const r = res.current;
-    clearTimeout(r.timer);
-    try { if (r.node) r.node.disconnect(); } catch (e) { /* schon getrennt */ }
-    if (r.stream) r.stream.getTracks().forEach(t => t.stop());
-    if (r.ctx) r.ctx.close().catch(() => {});
-    try { if (r.rec) r.rec.remove(); } catch (e) { /* schon entfernt */ }
-    res.current = {};
+  const audio = useRef(null); // { ctx, stream, node, ring, rate }
+  const active = useRef(null); // laufende Erkennung
+  const closeAudio = useCallback(() => {
+    const a = audio.current; audio.current = null;
+    if (!a) return;
+    try { a.node.disconnect(); } catch (e) { /* schon getrennt */ }
+    a.stream.getTracks().forEach(t => t.stop());
+    a.ctx.close().catch(() => {});
   }, []);
   useEffect(() => {
     if (!enabled) return undefined;
@@ -1324,38 +1331,81 @@ function useNumberListener(enabled) {
     loadVoskModel()
       .then((m) => { if (alive) { model.current = m; setState('ready'); } })
       .catch(() => { if (alive) { setState('error'); setError('Das Sprachmodell konnte nicht geladen werden.'); } });
-    return () => { alive = false; stop(); };
-  }, [enabled, stop]);
-
-  // Hört bis zu 5 Sekunden zu und liefert den erkannten Text ('' = nichts verstanden, null = Mikrofon-Problem)
-  const listen = useCallback(() => new Promise((resolve) => {
-    if (!model.current) { resolve(null); return; }
-    let finished = false;
-    const finish = (text, failed) => {
-      if (finished) return; finished = true; stop();
-      if (failed) { setState('error'); setError('Das Mikrofon ist nicht freigegeben. Erlaube den Zugriff in den Einstellungen des Geräts.'); }
-      else setState('ready');
-      resolve(text);
+    return () => {
+      alive = false;
+      if (active.current) active.current.cancel();
+      closeAudio();
     };
+  }, [enabled, closeAudio]);
+
+  // Mikrofon einmal öffnen (beim ersten Antippen) und laufen lassen; die letzte Sekunde wird gepuffert
+  const openAudio = useCallback(() => {
+    if (audio.current) return Promise.resolve(audio.current);
     let ctx;
-    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); ctx.resume && ctx.resume(); } catch (e) { finish(null, true); return; }
-    res.current.ctx = ctx;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { finish(null, true); return; }
-    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } })
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); if (ctx.resume) ctx.resume(); } catch (e) { return Promise.reject(e); }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return Promise.reject(new Error('kein Mikrofon'));
+    // Ohne Rausch- und Echo-Filter des Browsers: Diese Filter verändern die Sprache und verschlechtern die Erkennung.
+    return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true, channelCount: 1 } })
       .then((stream) => {
-        if (finished) { stream.getTracks().forEach(t => t.stop()); return; }
-        const rec = new model.current.KaldiRecognizer(ctx.sampleRate, NUMBER_GRAMMAR);
-        rec.on('result', (msg) => { const t = msg && msg.result && msg.result.text; if (t && t.replace('[unk]', '').trim()) finish(t); });
         const src = ctx.createMediaStreamSource(stream);
         const node = ctx.createScriptProcessor(4096, 1, 1);
-        node.onaudioprocess = (ev) => { try { rec.acceptWaveform(ev.inputBuffer); } catch (e) { /* Puffer übersprungen */ } };
+        const a = { ctx, stream, node, ring: [], rate: ctx.sampleRate };
+        const maxChunks = Math.ceil((PREROLL_SECONDS * ctx.sampleRate) / 4096);
+        node.onaudioprocess = (ev) => {
+          const chunk = new Float32Array(ev.inputBuffer.getChannelData(0));
+          if (active.current) active.current.feed(chunk);
+          a.ring.push(chunk); if (a.ring.length > maxChunks) a.ring.shift();
+        };
         src.connect(node); node.connect(ctx.destination);
-        Object.assign(res.current, { stream, rec, node });
-        setState('listening');
-        res.current.timer = setTimeout(() => { try { rec.retrieveFinalResult(); } catch (e) { /* egal */ } setTimeout(() => finish(''), 900); }, 5000);
+        audio.current = a;
+        return a;
       })
-      .catch(() => finish(null, true));
-  }), [stop]);
+      .catch((err) => { ctx.close().catch(() => {}); throw err; });
+  }, []);
+
+  // Hört zu und liefert { text, conf } (text '' = nichts verstanden) oder null bei Mikrofon-Problem
+  const listen = useCallback((target) => new Promise((resolve) => {
+    if (!model.current) { resolve(null); return; }
+    openAudio().then((a) => {
+      const rec = new model.current.KaldiRecognizer(a.rate, grammarFor(target));
+      try { rec.setWords(true); } catch (e) { /* ältere Version */ }
+      const words = [];
+      let done = false, quietTimer = null, maxTimer = null;
+      const end = (cancelled) => {
+        if (done) return; done = true;
+        clearTimeout(quietTimer); clearTimeout(maxTimer);
+        active.current = null;
+        setTimeout(() => { try { rec.remove(); } catch (e) { /* egal */ } }, 50);
+        setState('ready');
+        if (cancelled) { resolve(null); return; }
+        const real = words.filter(w => w.word !== '[unk]');
+        const text = real.map(w => w.word).join(' ');
+        const conf = real.length ? Math.min(...real.map(w => (typeof w.conf === 'number' ? w.conf : 1))) : 0;
+        resolve({ text, conf });
+      };
+      rec.on('result', (msg) => {
+        const r = msg && msg.result;
+        if (!r) return;
+        const ws = Array.isArray(r.result) && r.result.length ? r.result : (r.text ? r.text.split(' ').map(w => ({ word: w, conf: 1 })) : []);
+        if (!ws.length) return;
+        words.push(...ws);
+        // nach dem Sprechen noch kurz weiterhören – vielleicht kommt der Rest der Zahl
+        clearTimeout(quietTimer);
+        quietTimer = setTimeout(() => { try { rec.retrieveFinalResult(); } catch (e) { /* egal */ } setTimeout(() => end(false), 400); }, 900);
+      });
+      active.current = {
+        feed: (chunk) => { try { rec.acceptWaveformFloat(chunk, a.rate); } catch (e) { /* Puffer übersprungen */ } },
+        cancel: () => end(true)
+      };
+      // gepufferte letzte Sekunde zuerst: falls das Kind schon beim Antippen losgesprochen hat
+      a.ring.forEach(c => active.current && active.current.feed(new Float32Array(c)));
+      setState('listening');
+      maxTimer = setTimeout(() => { try { rec.retrieveFinalResult(); } catch (e) { /* egal */ } setTimeout(() => end(false), 900); }, 6000);
+    }).catch(() => {
+      setState('error'); setError('Das Mikrofon ist nicht freigegeben. Erlaube den Zugriff in den Einstellungen des Geräts.');
+      resolve(null);
+    });
+  }), [openAudio]);
   return { state, error, listen };
 }
 
@@ -1381,10 +1431,12 @@ function SprechenGame({ onFinish }) {
   const goNext = () => { setRevealed(false); setRated(null); setHeard(null); setTries(0); next(); };
 
   const talk = async () => {
-    const text = await mic.listen();
-    if (text === null) return; // Mikrofon-Problem: Hinweis kommt aus mic.error
-    const num = parseSpokenNumber(text);
-    setHeard({ text, num });
+    const r = await mic.listen(n);
+    if (r === null) return; // Mikrofon-Problem: Hinweis kommt aus mic.error
+    const parsed = parseSpokenNumber(r.text);
+    // unsicher erkannt → lieber „nicht verstanden“ als eine falsche Zahl behaupten
+    const num = parsed !== null && r.conf >= MIN_CONF ? parsed : null;
+    setHeard({ text: r.text, num, conf: r.conf, raw: parsed });
     const t = tries + 1;
     setTries(t);
     if (num === n) { record(true); setRated(true); return; }
@@ -1408,13 +1460,14 @@ function SprechenGame({ onFinish }) {
           <button onClick={talk} disabled={mic.state !== 'ready'} className={`w-28 h-28 rounded-full flex items-center justify-center text-white shadow-xl transition-all active:scale-95 disabled:opacity-60 ${mic.state === 'listening' ? 'bg-rose-600 animate-pulse' : 'bg-indigo-600 hover:bg-indigo-500'}`} aria-label="Sprechen">
             <Mic className="w-14 h-14" />
           </button>
-          <p className="font-black text-indigo-950 text-xl h-7">{mic.state === 'listening' ? 'Ich höre zu …' : mic.state === 'ready' ? (tries ? 'Versuch es noch einmal!' : 'Tippen und sprechen') : ''}</p>
+          <p className="font-black text-indigo-950 text-xl h-7">{mic.state === 'listening' ? 'Ich höre zu … sprich jetzt!' : mic.state === 'ready' ? (tries ? 'Versuch es noch einmal!' : 'Tippen, dann sprechen') : ''}</p>
           {heard && heard.num !== n && (
             <div className="bg-orange-50 border-2 border-orange-300 rounded-2xl p-3 max-w-md anim-pop">
               {heard.num ? <p>Ich habe <b>{zahlwort(heard.num)}</b> ({heard.num}) verstanden.</p> : <p>Ich habe dich nicht verstanden. Sprich laut und deutlich – und nicht zu schnell.</p>}
               {heard.num && isDreher(heard.num, n) && <p className="text-sm mt-1">Achtung, Zahlendreher? Zuerst sagst du die Einer!</p>}
             </div>
           )}
+          {heard && <p className="text-xs text-slate-400">Test-Info: gehört „{heard.text || '–'}“ · Sicherheit {Math.round((heard.conf || 0) * 100)} %{heard.raw !== null && heard.num === null ? ' (zu unsicher)' : ''}</p>}
           <button onClick={() => setUseMic(false)} className="text-sm text-slate-500 underline">Ohne Mikrofon weiter</button>
         </div>
       )}
@@ -1441,6 +1494,7 @@ function SprechenGame({ onFinish }) {
       {rated !== null && (
         <FeedbackBox ok={rated} onNext={goNext}>
           {rated && heard && heard.num === n && <p className="mb-2">Ich habe <b>{zahlwort(n)}</b> gehört. 🎤</p>}
+          {heard && <p className="text-xs text-slate-400 mb-1">Test-Info: gehört „{heard.text || '–'}“ · Sicherheit {Math.round((heard.conf || 0) * 100)} %</p>}
           {!rated && <p className="mb-2">Sprich es noch einmal langsam nach: <b>{zahlwort(n)}</b>.</p>}
           <ZEExplain n={n} word={false} />
         </FeedbackBox>
