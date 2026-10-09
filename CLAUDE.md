@@ -64,7 +64,7 @@ Lern-App für Zahlen bis 100 (Klasse 2), angelehnt an die *Idee* des Blitzrechne
 1. `blitzblick` **Wie viele sind es?** – Bild 3 s, „Nochmal ansehen“ bis 3×, danach bleibt es stehen. Antwort mit dem Finger (H/Z/E) oder tippen. Bei richtiger Antwort wird das Zahlwort vorgesprochen (+ „Nochmal hören“).
 2. `zeigen` **Zahlen zeigen** – im Punktefeld tippen. Die Zahl wird bei jeder Aufgabe vorgesprochen (Knopf „Hören“ zum Wiederholen) und bei richtiger Lösung noch einmal. Die Anzahl erscheint erst nach „Prüfen“ (so gewünscht).
 3. `legen` **Zahl legen** – Material-Tisch mit 10 Zehnerstangen und 10 Einerwürfeln, auf die Lege-Matte ziehen (Pointer-Events) oder antippen. 10 Einer → Tausch-Knopf.
-4. `schreiben` **Zahl schreiben** – Material, Stellentafel, Z/E-Angaben (auch vertauscht, Bündel-Aufgabe). Antwort mit dem Finger.
+4. `schreiben` **Zahl schreiben** – Material, Stellentafel, Z/E-Angaben (auch vertauscht, Bündel-Aufgabe). Antwort mit dem Finger. Bei richtiger Antwort wird das Zahlwort vorgesprochen (+ „Nochmal hören“).
 5. `hoeren` **Hör-Detektiv** – Zahl hören, aus 4 wählen (Zahlendreher, ±10, ±1).
 6. `diktat` **Zahlen-Diktat** – Zahl hören und mit dem Finger schreiben.
 7. `zahlwort` **Zahlwort-Baukasten** – Zahlwort aus Bausteinen mit Falsch-Bausteinen.
@@ -78,9 +78,8 @@ Lern-App für Zahlen bis 100 (Klasse 2), angelehnt an die *Idee* des Blitzrechne
 Die Lehrkraft möchte später ihre eigene Stimme verwenden. Vorgehen: Sie nimmt eins bis hundert auf (eine Datei mit Pausen oder 100 Einzeldateien). Dann schneiden (z. B. ffmpeg `silencedetect`), jedes Wort mit dem Filter aus `stimmen_erzeugen.py` (`AF`) bearbeiten, als `public/audio/<name>/<n>.mp3` speichern, in `FILE_VOICES` eintragen, gegebenenfalls als Standard setzen (`readUrlSettings` → `voiceChoice`) und jede Datei anhören bzw. mit Vosk prüfen.
 
 ## Offene Punkte
-- **Impressum/Datenschutz** (nur nach Freigabe ändern): Der Abschnitt „Das Wichtigste in Kürze“ erwähnt noch den Banden-Code, den es nicht mehr gibt. Vorschlag: den Satz zum Banden-Code streichen.
+- **Impressum/Datenschutz** am 09.10.2026 mit Freigabe aktualisiert: Banden-Code-Satz ersetzt („Sterne nur für die aktuelle Runde“), neuer Abschnitt 3 „Mikrofon, Spracherkennung und Vorlesen“, Lizenzzeilen (vosk-browser/Vosk-Modell Apache 2.0, Piper MIT, Thorsten-Voice CC0, M-AILABS-Lizenz, MNIST CC BY-SA 3.0 mit Urhebern), Stand Oktober 2026. Ändert sich an Mikrofon, Stimmen oder Speicherung etwas, muss dieser Text mit (nur nach Freigabe).
 - **Übungspass** (Papier zum Ausmalen nach jeder Runde) als Ersatz für das Speichern: von der Lehrkraft gewünscht, noch nicht gebaut.
-- **Impressum** (nur nach Freigabe ergänzen): Satz zum Vorlesen und Mikrofon („läuft vollständig auf dem Gerät, Aufnahmen werden weder gespeichert noch übertragen“) und Lizenzzeilen: vosk-browser und Vosk-Modell (Apache 2.0), Piper-Stimmen (Thorsten-Voice CC0; M-AILABS), MNIST für die Ziffern-Erkennung (CC BY-SA 3.0).
 - Spracherkennung mit Kindern testen. Die Lehrkraft meldet die Test-Info-Zeilen, damit lässt sich `MIN_CONF` einstellen.
 - Handschrift 1/7: Seit 09.10.2026 prüft `refineOneSeven` bei 1 oder 7 zusätzlich den Schreibweg (Querstrich bzw. flacher Strich oben → 7; steiler Aufstrich unterhalb der Spitze oder senkrechter Strich → 1). Mit simulierten Strichen getestet (8/8 richtig, 0/2/3/4/9 unverändert). **Mit echten Kinderschriften auf dem iPad noch testen.**
 - Eintrag der App in `Anweisung_Cowork_Lern-Apps_Allgemein.md` (Tabelle „Die Apps“) und neue Aufgabentypen in `Baukasten_Aufgabentypen.md` stehen noch aus.

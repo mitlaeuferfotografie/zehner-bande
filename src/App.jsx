@@ -1114,6 +1114,7 @@ const SCHREIB_HINT = {
 };
 function SchreibenGame({ onFinish, onShowTip }) {
   const { maxN } = useSettings();
+  const speak = useSpeak();
   const [tasks] = useState(() => makeSchreibTasks(maxN));
   const { idx, results, record, next } = useRound(onFinish);
   const [answer, setAnswer] = useState('');
@@ -1126,6 +1127,7 @@ function SchreibenGame({ onFinish, onShowTip }) {
     const ok = a === task.n;
     record(ok);
     ok ? streak.good() : streak.bad();
+    if (ok) speak(zahlwort(task.n)); // richtig geschrieben → Zahlwort vorsprechen
     setLast(a);
   };
   const check = () => checkValue(parseInt(answer, 10));
@@ -1153,6 +1155,7 @@ function SchreibenGame({ onFinish, onShowTip }) {
           {last !== task.n && !isDreher(last, task.n) && <p className="mb-2">Du hast <b>{last}</b> geschrieben.{mode === 'stift' && <span className="block text-sm text-slate-500">(So habe ich deine Schrift gelesen.)</span>}</p>}
           {task.kind === 'buendel' && <p className="mb-2">{zOf(task.n) - 1} Zehner + {eOf(task.n) + 10} Einer = {zOf(task.n) - 1} Zehner + 1 Zehner + {eOf(task.n)} Einer</p>}
           <ZEExplain n={task.n} />
+          {last === task.n && <div className="mt-2"><SpeakButton text={zahlwort(task.n)} /></div>}
         </FeedbackBox>
       )}
     </div>
@@ -1734,19 +1737,23 @@ function ImpressumModal({ onClose, section }) {
             Verwendete Bausteine anderer Urheber:<br />
             – Schriftarten „Fredoka“ und „Bangers“: SIL Open Font License 1.1<br />
             – Symbole: Lucide (ISC-Lizenz)<br />
-            – React (MIT-Lizenz), Tailwind CSS (MIT-Lizenz)
+            – React (MIT-Lizenz), Tailwind CSS (MIT-Lizenz)<br />
+            – Spracherkennung: vosk-browser und deutsches Vosk-Sprachmodell von Alpha Cephei (Apache-Lizenz 2.0)<br />
+            – Zahlen-Ansage, erzeugt mit Piper (MIT-Lizenz): Stimme „Thorsten“ auf Basis von Thorsten-Voice von Thorsten Müller (CC0), Stimme „Ramona“ auf Basis des M-AILABS Speech Dataset (M-AILABS-Lizenz, Aufnahmen von LibriVox)<br />
+            – Ziffern-Erkennung: trainiert mit dem MNIST-Datensatz von Y. LeCun, C. Cortes und C. J. C. Burges (CC BY-SA 3.0)
           </p>
           <H2 innerRef={datenschutzRef}>Datenschutz</H2>
           <H3>1. Verantwortlich</H3>
           <p>Peter Brandsch, Sandweg 13, 51503 Rösrath, E-Mail: <Mail /></p>
           <H3>2. Das Wichtigste in Kürze</H3>
-          <p>Die App funktioniert ohne Anmeldung und ohne Namen. Sie setzt keine Cookies, speichert nichts im Browser und verwendet keine Analyse-, Werbe- oder Trackingdienste. Der Spielstand besteht nur, solange die Seite geöffnet ist. Der Banden-Code wird ausschließlich auf dem Gerät angezeigt und eingegeben. Er wird nicht an mich oder an Dritte übertragen. Schriften und Gestaltungsdateien werden direkt mit der App ausgeliefert, es werden keine Verbindungen zu Google oder anderen Drittanbietern aufgebaut.</p>
-          {/* VORSCHLAG (noch nicht freigegeben): Satz zur Vorlese-Funktion ergänzen, siehe Anweisung_Cowork_Zehner-Bande.md */}
-          <H3>3. Bereitstellung über GitHub Pages</H3>
+          <p>Die App funktioniert ohne Anmeldung und ohne Namen. Sie setzt keine Cookies, speichert nichts im Browser und verwendet keine Analyse-, Werbe- oder Trackingdienste. Sterne gibt es nur für die aktuelle Runde. Es wird kein Spielstand gespeichert. Schriften und Gestaltungsdateien werden direkt mit der App ausgeliefert, es werden keine Verbindungen zu Google oder anderen Drittanbietern aufgebaut.</p>
+          <H3>3. Mikrofon, Spracherkennung und Vorlesen</H3>
+          <p>In der Übung „Sprech-Probe“ kann eine Spracherkennung eingeschaltet werden (Testbetrieb). Dafür fragt der Browser nach der Erlaubnis, das Mikrofon zu benutzen. Die Erkennung läuft vollständig auf dem Gerät. Die Sprachaufnahmen werden nur kurz im Arbeitsspeicher ausgewertet, nicht gespeichert und weder an mich noch an Dritte übertragen. Das dafür nötige Sprachmodell (ca. 50 MB) wird von GitHub Pages geladen, wie alle anderen Dateien der App. Auch die Erkennung der mit dem Finger geschriebenen Ziffern läuft nur auf dem Gerät, die Schrift wird nicht gespeichert. Die Zahlen werden mit aufgenommenen Sprachdateien vorgelesen, die mit der App ausgeliefert werden. Wird im Lehrer-Bereich die Stimme des Geräts gewählt, nutzt die App nur die auf dem Gerät installierten Stimmen.</p>
+          <H3>4. Bereitstellung über GitHub Pages</H3>
           <p>Die App wird über GitHub Pages bereitgestellt, einen Dienst der GitHub Inc., 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, USA. Beim Aufruf der App verarbeitet GitHub technisch notwendige Daten, insbesondere die IP-Adresse, Datum und Uhrzeit des Abrufs sowie Angaben zum verwendeten Browser. Dies ist erforderlich, um die Seite auszuliefern und ihre Sicherheit zu gewährleisten. Dabei können Daten in die USA übermittelt werden. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO. Mein berechtigtes Interesse liegt in einer sicheren und zuverlässigen Bereitstellung der App. Ich selbst erhalte keine Zugriffsdaten und werte keine aus. Weitere Informationen: Datenschutzerklärung von GitHub (<a href={GITHUB_PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline underline-offset-2 hover:text-cyan-200 break-all">{GITHUB_PRIVACY_URL}</a>).</p>
-          <H3>4. Deine Rechte</H3>
+          <H3>5. Deine Rechte</H3>
           <p>Du hast das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung der Verarbeitung (Art. 18) und Widerspruch (Art. 21). Wende dich dazu an die oben genannte E-Mail-Adresse. Außerdem kannst du dich bei einer Datenschutz-Aufsichtsbehörde beschweren, in Nordrhein-Westfalen bei der Landesbeauftragten für Datenschutz und Informationsfreiheit NRW (LDI NRW).</p>
-          <p className="mt-6 text-slate-400">Stand: September 2026</p>
+          <p className="mt-6 text-slate-400">Stand: Oktober 2026</p>
         </div>
       </div>
     </div>
