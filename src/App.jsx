@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, createContext, useContext } from 'react';
-import { Star, Award, ArrowRight, RotateCcw, BookOpen, Zap, Lock, Settings, Key, Copy, Check, Eye, Grid3x3, Blocks, PenLine, Ear, Headphones, Puzzle, Mic, Volume2, Printer, Target, Trophy, Crown, Delete, Shuffle, X, Users, Lightbulb } from 'lucide-react';
+import { Star, ArrowRight, RotateCcw, BookOpen, Zap, Lock, Settings, Copy, Check, Eye, Grid3x3, Blocks, PenLine, Ear, Headphones, Puzzle, Mic, Volume2, Printer, Delete, Shuffle, X, Users, Lightbulb } from 'lucide-react';
 
 // ==========================================
 // DIE ZEHNER-BANDE – Zahlen bis 100 (Klasse 2)
@@ -137,6 +137,7 @@ function pickNumbers(count, min, max, filter = () => true) {
 
 // Gute Übungszahlen: Einer ≠ 0 und Einer ≠ Zehner (Zahlendreher möglich), dazu einzelne Zehnerzahlen
 function practiceNumbers(count, maxN, opts = {}) {
+  if (maxN <= 10) return pickNumbers(count, 1, 10); // bis 10: jede Zahl einmal, in zufälliger Reihenfolge
   const min = opts.min || (maxN <= 20 ? 11 : 13);
   const max = Math.min(maxN, 99);
   const isTricky = n => n >= 13 && eOf(n) !== 0 && eOf(n) !== zOf(n);
@@ -147,17 +148,18 @@ function practiceNumbers(count, maxN, opts = {}) {
 }
 
 // ==========================================
-// EINSTELLUNGEN (Lehrer-Bereich, nur für diese Sitzung – oder per Link ?zr=50&blitz=3)
+// EINSTELLUNGEN (Lehrer-Bereich, nur für diese Sitzung – oder per Link ?zr=20&blitz=3)
 // ==========================================
 const SettingsContext = createContext(null);
 const useSettings = () => useContext(SettingsContext);
 
 function readUrlSettings() {
-  const out = { maxN: 100, blitzMs: 3000, speechOn: false, voiceChoice: 'thorsten' };
+  // zrFromLink: Steht der Zahlenraum im Link, entfällt das Auswahlbild beim Start.
+  const out = { maxN: 100, zrFromLink: false, blitzMs: 3000, speechOn: false, voiceChoice: 'thorsten' };
   try {
     const p = new URLSearchParams(window.location.search);
     const zr = parseInt(p.get('zr'), 10);
-    if ([20, 50, 100].includes(zr)) out.maxN = zr;
+    if ([10, 20, 100].includes(zr)) { out.maxN = zr; out.zrFromLink = true; }
     const b = parseInt(p.get('blitz'), 10);
     if ([0, 1, 2, 3].includes(b)) out.blitzMs = b * 1000;
     if (p.get('sprache') === '1') out.speechOn = true;
@@ -253,46 +255,11 @@ function useSpeak() {
 }
 
 // ==========================================
-// „DAS KANN ICH SCHON:“ (gleiches Schema wie die Deutsch-Apps)
-// ==========================================
-const SkillContext = createContext({ track: () => {} });
-const useTrack = () => useContext(SkillContext).track;
-
-const SKILLS = [
-  { id: 'erfassen', label: 'Ich erkenne Mengen auf einen Blick.', short: 'Mengen erfassen' },
-  { id: 'darstellen', label: 'Ich zeige Zahlen im Hunderterfeld.', short: 'Zahlen zeigen' },
-  { id: 'stellenwert', label: 'Ich kenne Zehner und Einer.', short: 'Zehner & Einer' },
-  { id: 'hoeren', label: 'Ich erkenne Zahlen beim Hören.', short: 'Zahlen hören' },
-  { id: 'schreiben', label: 'Ich schreibe Zahlen ohne Zahlendreher.', short: 'Zahlen schreiben' },
-  { id: 'sprechen', label: 'Ich kann Zahlwörter bilden.', short: 'Zahlwörter' }
-];
-const GAME_SKILLS = {
-  blitzblick: ['erfassen'], zeigen: ['darstellen'], legen: ['stellenwert'], schreiben: ['stellenwert', 'schreiben'],
-  hoeren: ['hoeren'], diktat: ['schreiben'], zahlwort: ['sprechen'], sprechen: []
-};
-const SKILL_LEVEL_UI = {
-  0: { text: '🔍 Noch zu wenig Aufgaben', cls: 'bg-slate-800 text-slate-300 border-slate-600' },
-  1: { text: '🎯 Übe ich noch', cls: 'bg-amber-900/60 text-amber-200 border-amber-500/60' },
-  2: { text: '🙂 Fast!', cls: 'bg-sky-900/60 text-sky-200 border-sky-500/60' },
-  3: { text: '💪 Kann ich!', cls: 'bg-lime-900/60 text-lime-200 border-lime-500/60' }
-};
-const skillLevel = (entry) => {
-  if (!entry || entry.window.length < 4) return 0;
-  const pct = entry.window.filter(Boolean).length / entry.window.length;
-  if (pct >= 0.9) return 3;
-  if (pct >= 0.7) return 2;
-  return 1;
-};
-const START_WINDOWS = { 3: [true, true, true, true], 2: [true, true, true, false], 1: [true, false, false, false], 0: [] };
-const skillLogFromLevels = (levels) => {
-  const log = {};
-  SKILLS.forEach(s => { const l = levels[s.id] || 0; if (l > 0) log[s.id] = { window: [...START_WINDOWS[l]], fromCode: true }; });
-  return log;
-};
-
-// ==========================================
 // GEMEINSAME BAUSTEINE (Darstellungen)
 // ==========================================
+
+// Wie viele Reihen das Punktefeld im gewählten Zahlenraum hat: Zehnerstreifen (bis 10), Zwanzigerfeld (bis 20), Hunderterfeld
+const fieldRows = (maxN) => (maxN <= 10 ? 1 : maxN <= 20 ? 2 : 10);
 
 // Hunderterfeld mit 5er-Lücke. Volle Reihen = Zehner (blau), angefangene Reihe = Einer (grün), ganz voll = 1 Hunderter (rot).
 function HundredField({ n = 0, size = 300, interactive = false, onPick, showEmpty = true, mono = false, rowsVisible = 10, outline = null }) {
@@ -403,6 +370,13 @@ function ZEExplain({ n, word = true }) {
       <span>=</span>
       <span className="px-3 py-1 rounded-xl border-2" style={{ background: COL.zLight, borderColor: COL.z, color: COL.zDark }}>10 Zehner</span>
       <span className="w-full text-center text-slate-500 font-semibold italic">hundert</span>
+    </div>
+  );
+  // Einstellige Zahlen (Zahlenraum bis 10): „0 Zehner“ wäre verwirrend – nur Zahl und Zahlwort
+  if (n < 10) return (
+    <div className="flex flex-wrap items-center justify-center gap-2 text-lg md:text-xl font-bold text-slate-700">
+      <ColorNumber n={n} className="text-3xl font-black" /><span>·</span>
+      <span className="text-slate-500 font-semibold italic">{zahlwort(n)}</span>
     </div>
   );
   return (
@@ -585,9 +559,9 @@ function NumberPrompt({ n }) {
 // ==========================================
 function BlitzblickGame({ onFinish, onShowTip }) {
   const { maxN, blitzMs } = useSettings();
-  const track = useTrack();
+  const speak = useSpeak();
   const [tasks] = useState(() => {
-    const nums = pickNumbers(ROUND, maxN <= 20 ? 6 : 12, Math.min(maxN, 99), n => eOf(n) !== 0 || Math.random() < 0.3);
+    const nums = pickNumbers(ROUND, maxN <= 10 ? 2 : maxN <= 20 ? 6 : 12, Math.min(maxN, 99), n => eOf(n) !== 0 || Math.random() < 0.3);
     if (maxN === 100 && Math.random() < 0.5) nums[randInt(5, 9)] = 100;
     const views = ['feld', 'feld', 'streifen', 'material'];
     return nums.map((n, i) => ({ n, view: views[i % views.length] }));
@@ -601,7 +575,9 @@ function BlitzblickGame({ onFinish, onShowTip }) {
   const [peeks, setPeeks] = useState(0); // wie oft nochmal angeschaut (max. 3, danach bleibt das Bild stehen)
   const [peeking, setPeeking] = useState(false);
   const MAX_PEEKS = 3;
-  const streak = useStreak(onShowTip, 'Schau zuerst auf die vollen Reihen: Jede volle Reihe ist ein Zehner – wie eine blaue Zehnerstange. Zähle die Reihen – dann die einzelnen Punkte. Die Lücke in der Mitte hilft: 5 und 5 sind 10!');
+  const streak = useStreak(onShowTip, maxN <= 10
+    ? 'Die Lücke in der Mitte hilft: Links sind immer 5. Sind es mehr als 5? Dann zähl nur die Punkte rechts dazu: 5 und 2 sind 7. Alle voll? Dann sind es 10!'
+    : 'Schau zuerst auf die vollen Reihen: Jede volle Reihe ist ein Zehner – wie eine blaue Zehnerstange. Zähle die Reihen – dann die einzelnen Punkte. Die Lücke in der Mitte hilft: 5 und 5 sind 10!');
   const task = tasks[idx];
   const timer = useRef(null);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -615,9 +591,8 @@ function BlitzblickGame({ onFinish, onShowTip }) {
   const checkValue = (a) => {
     const ok = a === task.n;
     record(ok);
-    // „Mengen auf einen Blick erfassen“ zählt nur ohne Nochmal-Ansehen (sonst misst es nicht mehr den schnellen Blick)
-    if (peeks === 0) track('erfassen', ok);
     ok ? streak.good() : streak.bad();
+    if (ok) speak(zahlwort(task.n)); // richtig → Zahlwort vorsprechen (Menge, Ziffer und Wort verbinden)
     setLastAnswer(a); setPhase('done');
   };
   const goNext = () => { setAnswer(''); setLastAnswer(null); setPhase('ready'); setPeeks(0); setPeeking(false); next(); };
@@ -633,10 +608,11 @@ function BlitzblickGame({ onFinish, onShowTip }) {
 
   const visible = phase === 'show' || phase === 'done' || (phase === 'answer' && (blitzMs === 0 || peeking || peeks >= MAX_PEEKS));
   const fieldSize = 300;
-  const rowsVisible = maxN <= 20 ? 2 : maxN <= 50 ? 5 : 10;
+  const rowsVisible = fieldRows(maxN);
+  const fullField = task.view === 'feld' || maxN <= 20; // bis 20 immer das ganze Feld (Zehnerstreifen bzw. Zwanzigerfeld)
   const figure = task.view === 'material'
     ? (task.n === 100 ? <TensOnes h={1} z={0} e={0} unit={20} /> : <TensOnes z={zOf(task.n)} e={eOf(task.n)} unit={20} />)
-    : <HundredField n={task.n} size={fieldSize} showEmpty={task.view === 'feld'} rowsVisible={task.view === 'feld' ? Math.max(rowsVisible, Math.ceil(task.n / 10)) : Math.ceil(task.n / 10)} />;
+    : <HundredField n={task.n} size={fieldSize} showEmpty={fullField} rowsVisible={fullField ? Math.max(rowsVisible, Math.ceil(task.n / 10)) : Math.ceil(task.n / 10)} />;
 
   return (
     <div>
@@ -681,6 +657,7 @@ function BlitzblickGame({ onFinish, onShowTip }) {
           {lastAnswer !== task.n && isDreher(lastAnswer, task.n) && <DreherHint answer={lastAnswer} target={task.n} />}
           {lastAnswer !== task.n && !isDreher(lastAnswer, task.n) && <p className="mb-2">Du hast <b>{lastAnswer}</b> geschrieben. Es sind <b>{task.n}</b>.{mode === 'stift' && <span className="block text-sm text-slate-500">(So habe ich deine Schrift gelesen.)</span>}</p>}
           <ZEExplain n={task.n} />
+          {lastAnswer === task.n && <div className="mt-2"><SpeakButton text={zahlwort(task.n)} /></div>}
         </FeedbackBox>
       )}
     </div>
@@ -692,31 +669,37 @@ function BlitzblickGame({ onFinish, onShowTip }) {
 // ==========================================
 function ZeigenGame({ onFinish, onShowTip }) {
   const { maxN } = useSettings();
-  const track = useTrack();
+  const speak = useSpeak();
   const [tasks] = useState(() => practiceNumbers(ROUND, maxN).map((n, i) => ({ n, asWord: i >= 5 && i % 2 === 1 })));
   const { idx, results, record, next } = useRound(onFinish);
   const [picked, setPicked] = useState(0);
   const [done, setDone] = useState(false);
-  const streak = useStreak(onShowTip, 'Male zuerst die Zehner: Für jeden Zehner eine ganze Reihe. Dann tippst du in der nächsten Reihe so viele Punkte an, wie die Zahl Einer hat.');
+  const streak = useStreak(onShowTip, maxN <= 10
+    ? 'Nutze die Lücke: Links sind 5 Punkte. Für 7 tippst du also die 5 links und noch 2 rechts an.'
+    : 'Male zuerst die Zehner: Für jeden Zehner eine ganze Reihe. Dann tippst du in der nächsten Reihe so viele Punkte an, wie die Zahl Einer hat.');
   const task = tasks[idx];
   const ok = picked === task.n;
 
-  const check = () => { record(ok); track('darstellen', ok); ok ? streak.good() : streak.bad(); setDone(true); };
+  // Richtig gezeigt → das Zahlwort wird vorgesprochen (Zahl, Bild und Wort verbinden)
+  const check = () => { record(ok); ok ? streak.good() : streak.bad(); setDone(true); if (ok) speak(zahlwort(task.n)); };
   const goNext = () => { setPicked(0); setDone(false); next(); };
+  // Jede neue Aufgabe: die Zahl wird auch vorgesprochen – Ziffer bzw. Zahlwort und Klang gehören zusammen
+  useEffect(() => { const t = setTimeout(() => speak(zahlwort(task.n)), 300); return () => clearTimeout(t); }, [idx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
       <GameHead icon={Grid3x3} title="Zahlen zeigen">Tippe auf den Punkt, bis zu dem die Zahl reicht.</GameHead>
       <RoundDots current={idx} total={ROUND} results={results} />
-      <div className="text-center mb-3">
-        <span className="text-slate-500 font-bold mr-2">Zeige:</span>
+      <div className="flex flex-wrap items-center justify-center gap-3 mb-3">
+        <span className="text-slate-500 font-bold">Zeige:</span>
         {task.asWord
           ? <span className="inline-block bg-white border-4 border-indigo-900 rounded-2xl px-5 py-2 text-3xl font-black text-indigo-950">{zahlwort(task.n)}</span>
           : <span className="inline-block bg-white border-4 border-indigo-900 rounded-2xl px-5 py-1 text-5xl font-black"><ColorNumber n={task.n} /></span>}
+        <SpeakButton text={zahlwort(task.n)} label="Hören" />
       </div>
       <div className="flex flex-col lg:flex-row items-center justify-center gap-6">
         <div className="bg-white rounded-3xl border-4 border-indigo-900 p-3 shadow-[6px_6px_0_rgba(30,27,75,0.25)]">
-          <HundredField n={done && !ok ? task.n : picked} size={340} interactive={!done} onPick={(k) => setPicked(k === picked ? k - 1 : k)} />
+          <HundredField n={done && !ok ? task.n : picked} size={340} rowsVisible={fieldRows(maxN)} interactive={!done} onPick={(k) => setPicked(k === picked ? k - 1 : k)} />
         </div>
         <div className="flex flex-col items-center gap-3">
           {done && (
@@ -729,7 +712,7 @@ function ZeigenGame({ onFinish, onShowTip }) {
             <>
               <div className="flex gap-2">
                 <button onClick={() => setPicked(p => Math.max(0, p - 1))} className="w-14 h-12 rounded-xl bg-white border-2 border-indigo-200 font-black text-2xl text-indigo-900">−1</button>
-                <button onClick={() => setPicked(p => Math.min(100, p + 1))} className="w-14 h-12 rounded-xl bg-white border-2 border-indigo-200 font-black text-2xl text-indigo-900">+1</button>
+                <button onClick={() => setPicked(p => Math.min(fieldRows(maxN) * 10, p + 1))} className="w-14 h-12 rounded-xl bg-white border-2 border-indigo-200 font-black text-2xl text-indigo-900">+1</button>
               </div>
               <button onClick={() => setPicked(0)} className="text-slate-500 underline text-sm">Alles löschen</button>
               <button onClick={check} disabled={!picked} className="bg-yellow-400 hover:bg-yellow-300 disabled:opacity-40 text-indigo-950 font-black text-xl py-3 px-10 rounded-xl shadow-[0_4px_0_#ca8a04] active:translate-y-1 active:shadow-none">Prüfen</button>
@@ -742,6 +725,7 @@ function ZeigenGame({ onFinish, onShowTip }) {
           {!ok && <p className="mb-2">Du hast <b>{picked}</b> gezeigt. Im Feld siehst du jetzt, wie <b>{task.n}</b> aussieht.</p>}
           {!ok && isDreher(picked, task.n) && <DreherHint answer={picked} target={task.n} />}
           <ZEExplain n={task.n} />
+          {ok && <div className="mt-2"><SpeakButton text={zahlwort(task.n)} /></div>}
         </FeedbackBox>
       )}
     </div>
@@ -764,7 +748,6 @@ function Piece({ kind, ghost = false, dim = false, ...rest }) {
 
 function LegenGame({ onFinish, onShowTip }) {
   const { maxN } = useSettings();
-  const track = useTrack();
   const [tasks] = useState(() => {
     const t = practiceNumbers(ROUND, maxN).map((n, i) => ({ n, asWord: i >= 6 }));
     if (maxN === 100) t[5] = { n: 100, asWord: false }; // einmal pro Runde: 10 Zehner = 100
@@ -823,7 +806,7 @@ function LegenGame({ onFinish, onShowTip }) {
 
   const tauschen = () => { if (eIn === 10 && zIn < 10) { setEIn(0); setZIn(z => z + 1); } };
   const clear = () => { setZIn(0); setEIn(0); };
-  const check = () => { record(ok); track('stellenwert', ok); ok ? streak.good() : streak.bad(); setDone(true); };
+  const check = () => { record(ok); ok ? streak.good() : streak.bad(); setDone(true); };
   const goNext = () => { clear(); setDone(false); next(); };
 
   return (
@@ -966,53 +949,104 @@ function recognizeDigit(canvas) {
   const mxo = Math.max(...out); const ex = out.map(v => Math.exp(v - mxo)); const tot = ex.reduce((a, b) => a + b, 0);
   const probs = ex.map(v => v / tot);
   const digit = probs.indexOf(Math.max(...probs));
-  return { digit, conf: probs[digit], aspect: bh / bw };
+  return { digit, conf: probs[digit], aspect: bh / bw, p1: probs[1], p7: probs[7] };
 }
 
-// Ein Schreibfeld für eine Ziffer (Finger, Stift oder Maus)
-function WritePad({ label, color, light, dark, onResult, disabled, resetKey, size = 150, hint = 'Schreib hier eine Ziffer' }) {
+// Die deutsche 1 mit Aufstrich sieht für das Netz (gelernt an amerikanischen Ziffern) oft wie eine 7 aus –
+// und umgekehrt. Darum wird bei 1 oder 7 zusätzlich der Schreibweg geprüft (strokes = Liste der Striche mit Punkten):
+// 7 = Querstrich in der Mitte oder Anfang oben links mit flachem Strich nach rechts,
+// 1 = steiler Aufstrich, der deutlich unterhalb der Spitze beginnt, oder ein fast senkrechter Strich.
+function refineOneSeven(r, strokes) {
+  if (!r || !strokes || !strokes.length) return r;
+  if (r.digit !== 1 && r.digit !== 7 && r.p1 + r.p7 < 0.5) return r;
+  const all = strokes.flat();
+  const xs = all.map(p => p.x), ys = all.map(p => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const h = maxY - minY, w = maxX - minX;
+  if (h < 15) return r;
+  const as = (digit) => ({ ...r, digit, conf: Math.max(r.conf, 0.85), checked: true });
+  const len = (s) => s.reduce((a, p, i) => (i ? a + Math.hypot(p.x - s[i - 1].x, p.y - s[i - 1].y) : 0), 0);
+  // Querstrich der 7: ein zweiter, flacher Strich etwa in der Mitte
+  const main = strokes.reduce((a, s) => (len(s) > len(a) ? s : a), strokes[0]);
+  const bar = strokes.some(s => {
+    if (s === main || s.length < 2) return false;
+    const sx = s.map(p => p.x), sy = s.map(p => p.y);
+    const bw = Math.max(...sx) - Math.min(...sx), bh = Math.max(...sy) - Math.min(...sy);
+    const cy = (sy.reduce((a, v) => a + v, 0) / sy.length - minY) / h;
+    return bw > 0.2 * h && bh < 0.15 * h && cy > 0.3 && cy < 0.8;
+  });
+  if (bar) return as(7);
+  // Ecke = Punkt, an dem der erste Strich am weitesten nach rechts oben kommt
+  const first = strokes[0];
+  const start = first[0];
+  const corner = first.reduce((a, p) => (p.x - p.y > a.x - a.y ? p : a), first[0]);
+  const drop = Math.max(0, start.y - corner.y) / h; // wie weit unter der Spitze der Strich beginnt
+  const run = Math.max(0, corner.x - start.x) / h;   // wie weit er nach rechts geht
+  if (run >= 0.3 && drop < 0.4 * run) return as(7);
+  if (drop >= 0.15 && drop >= 0.6 * run) return as(1);
+  if (w < 0.25 * h) return as(1);
+  return r;
+}
+
+// Ein Schreibfeld für eine Ziffer (Finger, Stift oder Maus).
+// side: Lage in der Reihe (left | middle | right | single). Die Felder liegen ohne Abstand nebeneinander,
+// damit die Ziffern wie eine Zahl zusammenstehen; Rahmen nur zart in der Stellenwert-Farbe.
+function WritePad({ label, color, light, dark, onResult, disabled, resetKey, size = 150, hint = 'Schreib hier eine Ziffer', side = 'single' }) {
   const ref = useRef(null);
   const drawing = useRef(false);
   const last = useRef(null);
   const timer = useRef(null);
+  const strokes = useRef([]); // Schreibweg (für die Unterscheidung 1/7)
   const [res, setRes] = useState(null);
   const SIZE = size;
+  const W = Math.round(size * 0.8), H = Math.round(size * 1.25); // schmaler als hoch: Ziffern rücken zusammen
   useEffect(() => {
     const c = ref.current; const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-    c.width = SIZE * dpr; c.height = SIZE * 1.25 * dpr;
+    c.width = W * dpr; c.height = H * dpr;
     const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, SIZE, SIZE * 1.25);
+    ctx.clearRect(0, 0, W, H);
+    strokes.current = [];
     setRes(null); onResult && onResult(null);
   }, [resetKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => clearTimeout(timer.current), []);
-  const pos = (ev) => { const r = ref.current.getBoundingClientRect(); return { x: (ev.clientX - r.left) * (SIZE / r.width), y: (ev.clientY - r.top) * (SIZE / r.width) }; };
+  const pos = (ev) => { const r = ref.current.getBoundingClientRect(); return { x: (ev.clientX - r.left) * (W / r.width), y: (ev.clientY - r.top) * (W / r.width) }; };
   const stroke = (a, b) => {
     const ctx = ref.current.getContext('2d');
     ctx.strokeStyle = '#1e1b4b'; ctx.lineWidth = SIZE * 0.087; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   };
-  const down = (ev) => { if (disabled) return; ev.preventDefault(); ref.current.setPointerCapture && ref.current.setPointerCapture(ev.pointerId); drawing.current = true; clearTimeout(timer.current); const p = pos(ev); last.current = p; stroke(p, { x: p.x + 0.1, y: p.y + 0.1 }); };
-  const move = (ev) => { if (!drawing.current) return; const p = pos(ev); stroke(last.current, p); last.current = p; };
+  const down = (ev) => { if (disabled) return; ev.preventDefault(); ref.current.setPointerCapture && ref.current.setPointerCapture(ev.pointerId); drawing.current = true; clearTimeout(timer.current); const p = pos(ev); last.current = p; strokes.current.push([p]); stroke(p, { x: p.x + 0.1, y: p.y + 0.1 }); };
+  const move = (ev) => { if (!drawing.current) return; const p = pos(ev); stroke(last.current, p); last.current = p; strokes.current[strokes.current.length - 1].push(p); };
   const up = () => {
     if (!drawing.current) return; drawing.current = false;
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => { const r = recognizeDigit(ref.current); setRes(r); onResult && onResult(r); }, 450);
+    timer.current = setTimeout(() => { const r = refineOneSeven(recognizeDigit(ref.current), strokes.current); setRes(r); onResult && onResult(r); }, 450);
   };
   const clear = () => {
-    const c = ref.current; c.getContext('2d').clearRect(0, 0, c.width, c.height); setRes(null); onResult && onResult(null);
+    const c = ref.current; c.getContext('2d').clearRect(0, 0, c.width, c.height); strokes.current = []; setRes(null); onResult && onResult(null);
   };
   const unsure = res && res.conf < 0.6;
+  const soft = `${color}59`; // Stellenwert-Farbe, ca. 35 % deckend
+  const r = 18;
+  const radius = { left: `${r}px 0 0 ${r}px`, right: `0 ${r}px ${r}px 0`, middle: '0', single: `${r}px` }[side];
+  const frame = {
+    border: `3px solid ${soft}`,
+    // Zwischen zwei Feldern nur eine dünne gestrichelte Linie
+    ...(side === 'left' || side === 'middle' ? { borderRight: `2px dashed ${soft}` } : {}),
+    ...(side === 'right' || side === 'middle' ? { borderLeft: 'none' } : {}),
+    borderRadius: radius, background: '#fff', width: W + (side === 'right' || side === 'middle' ? 0 : 3) + (side === 'left' || side === 'middle' ? 2 : 3), height: H + 6,
+  };
   return (
     <div className="flex flex-col items-center gap-1">
       <span className="font-black text-lg" style={{ color }}>{label}</span>
-      <div className="relative rounded-2xl border-4 overflow-hidden" style={{ borderColor: color, background: '#fff', width: SIZE, height: SIZE * 1.25 }}>
+      <div className="relative overflow-hidden" style={frame}>
         {/* Schreiblinien */}
         <div className="absolute inset-x-0 pointer-events-none" style={{ top: '22%', borderTop: `2px dashed ${light}` }} />
-        <div className="absolute inset-x-0 pointer-events-none" style={{ top: '82%', borderTop: `3px solid ${color}`, opacity: 0.5 }} />
+        <div className="absolute inset-x-0 pointer-events-none" style={{ top: '82%', borderTop: `3px solid ${color}`, opacity: 0.35 }} />
         <canvas ref={ref} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={up}
-          style={{ width: SIZE, height: SIZE * 1.25, touchAction: 'none', position: 'relative', cursor: disabled ? 'default' : 'crosshair' }} />
+          style={{ width: W, height: H, touchAction: 'none', position: 'relative', cursor: disabled ? 'default' : 'crosshair' }} />
       </div>
-      <div className="h-6 text-sm font-bold text-center" style={{ color: unsure ? '#c2410c' : dark }}>
+      <div className="min-h-[2.5rem] text-sm leading-tight font-bold text-center" style={{ color: unsure ? '#c2410c' : dark, width: W }}>
         {res ? (unsure ? 'Nicht lesbar – schreib nochmal' : <>Ich lese: <span className="text-lg">{res.digit}</span></>) : <span className="text-slate-400">{hint}</span>}
       </div>
       {!disabled && <button onClick={clear} className="text-xs font-bold px-3 py-1 rounded-full bg-slate-200 text-slate-600 inline-flex items-center gap-1"><Delete className="w-3.5 h-3.5" /> Wegwischen</button>}
@@ -1033,10 +1067,10 @@ function HandwriteNumber({ onSubmit, disabled, withH = false, optional = false }
   const size = withH ? 108 : 150;
   return (
     <div className="flex flex-col items-center gap-3">
-      <div className={`flex ${withH ? 'gap-2' : 'gap-4'}`}>
-        {withH && <WritePad size={size} label="H" color={COL.h} light={COL.hLight} dark={COL.hDark} onResult={setRh} disabled={disabled} hint="nur bei 100" />}
-        <WritePad size={size} label="Z" color={COL.z} light={COL.zLight} dark={COL.zDark} onResult={setRz} disabled={disabled} hint={optional ? 'Zehner' : undefined} />
-        <WritePad size={size} label="E" color={COL.e} light={COL.eLight} dark={COL.eDark} onResult={setRe} disabled={disabled} hint={optional ? 'Einer' : undefined} />
+      <div className="flex">
+        {withH && <WritePad size={size} side="left" label="H" color={COL.h} light={COL.hLight} dark={COL.hDark} onResult={setRh} disabled={disabled} hint="nur bei 100" />}
+        <WritePad size={size} side={withH ? 'middle' : 'left'} label="Z" color={COL.z} light={COL.zLight} dark={COL.zDark} onResult={setRz} disabled={disabled} hint={optional ? 'Zehner' : undefined} />
+        <WritePad size={size} side="right" label="E" color={COL.e} light={COL.eLight} dark={COL.eDark} onResult={setRe} disabled={disabled} hint={optional ? 'Einer' : undefined} />
       </div>
       <button onClick={() => onSubmit(value())} disabled={!ready || disabled} className="bg-yellow-400 hover:bg-yellow-300 disabled:opacity-40 text-indigo-950 font-black text-xl py-3 px-10 rounded-xl shadow-[0_4px_0_#ca8a04] active:translate-y-1 active:shadow-none">Prüfen</button>
     </div>
@@ -1080,7 +1114,6 @@ const SCHREIB_HINT = {
 };
 function SchreibenGame({ onFinish, onShowTip }) {
   const { maxN } = useSettings();
-  const track = useTrack();
   const [tasks] = useState(() => makeSchreibTasks(maxN));
   const { idx, results, record, next } = useRound(onFinish);
   const [answer, setAnswer] = useState('');
@@ -1091,7 +1124,7 @@ function SchreibenGame({ onFinish, onShowTip }) {
   const [mode, setMode] = useState('stift'); // stift | tasten
   const checkValue = (a) => {
     const ok = a === task.n;
-    record(ok); track('stellenwert', ok); track('schreiben', !isDreher(a, task.n));
+    record(ok);
     ok ? streak.good() : streak.bad();
     setLast(a);
   };
@@ -1134,7 +1167,7 @@ function hoerOptions(n, maxN) {
   const cands = [];
   const z = zOf(n), e = eOf(n);
   if (e && z && e !== z && e * 10 + z <= max) cands.push(e * 10 + z);
-  [n + 10, n - 10, n + 1, n - 1].forEach(c => { if (c >= 1 && c <= max) cands.push(c); });
+  (max <= 10 ? [n + 1, n - 1, n + 2, n - 2] : [n + 10, n - 10, n + 1, n - 1]).forEach(c => { if (c >= 1 && c <= max) cands.push(c); });
   const opts = [n];
   for (const c of cands) { if (opts.length >= 4) break; if (!opts.includes(c)) opts.push(c); }
   while (opts.length < 4) { const r = randInt(1, max); if (!opts.includes(r)) opts.push(r); }
@@ -1142,13 +1175,14 @@ function hoerOptions(n, maxN) {
 }
 function HoerenGame({ onFinish, onShowTip }) {
   const { maxN } = useSettings();
-  const track = useTrack();
   const speak = useSpeak();
   const [started, setStarted] = useState(false);
   const [tasks] = useState(() => practiceNumbers(ROUND, maxN).map(n => ({ n, opts: hoerOptions(n, maxN) })));
   const { idx, results, record, next } = useRound(onFinish);
   const [chosen, setChosen] = useState(null);
-  const streak = useStreak(onShowTip, 'Hör bis zum Ende zu! Bei „dreiundvierzig“ hörst du zuerst die Einer (drei) und dann die Zehner (vierzig). Vierzig heißt: 4 Zehner. Also 43.');
+  const streak = useStreak(onShowTip, maxN <= 10
+    ? 'Hör genau hin und sprich die Zahl leise mit. Du kannst sie so oft hören, wie du willst.'
+    : 'Hör bis zum Ende zu! Bei „dreiundvierzig“ hörst du zuerst die Einer (drei) und dann die Zehner (vierzig). Vierzig heißt: 4 Zehner. Also 43.');
   const task = tasks[idx];
 
   const spokeFirst = useRef(false);
@@ -1158,12 +1192,12 @@ function HoerenGame({ onFinish, onShowTip }) {
     const t = setTimeout(() => speak(zahlwort(task.n)), 250); return () => clearTimeout(t);
   }, [started, idx]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!started) return <AudioStart title="Hör-Detektiv" onStart={() => { spokeFirst.current = true; setStarted(true); speak(zahlwort(task.n)); }}>Du hörst eine Zahl. Tippe die richtige Zahl an. Achtung: Es sind Zahlendreher versteckt!</AudioStart>;
+  if (!started) return <AudioStart title="Hör-Detektiv" onStart={() => { spokeFirst.current = true; setStarted(true); speak(zahlwort(task.n)); }}>Du hörst eine Zahl. Tippe die richtige Zahl an.{maxN > 10 && ' Achtung: Es sind Zahlendreher versteckt!'}</AudioStart>;
 
   const pick = (o) => {
     if (chosen !== null) return;
     const ok = o === task.n;
-    record(ok); track('hoeren', ok); ok ? streak.good() : streak.bad();
+    record(ok); ok ? streak.good() : streak.bad();
     setChosen(o);
   };
   const goNext = () => { setChosen(null); next(); };
@@ -1197,7 +1231,6 @@ function HoerenGame({ onFinish, onShowTip }) {
 // ==========================================
 function DiktatGame({ onFinish, onShowTip }) {
   const { maxN } = useSettings();
-  const track = useTrack();
   const speak = useSpeak();
   const [started, setStarted] = useState(false);
   const [tasks] = useState(() => practiceNumbers(ROUND, maxN));
@@ -1205,7 +1238,9 @@ function DiktatGame({ onFinish, onShowTip }) {
   const [answer, setAnswer] = useState('');
   const [last, setLast] = useState(null);
   const [mode, setMode] = useState('stift'); // stift | tasten
-  const streak = useStreak(onShowTip, 'Erst ganz zuhören, dann schreiben! Überlege: Wie viele Zehner? Die schreibst du zuerst. Dann die Einer.');
+  const streak = useStreak(onShowTip, maxN <= 10
+    ? 'Erst ganz zuhören, dann schreiben! Eine Zahl bis 9 schreibst du ins grüne Feld E. Nur die 10 braucht beide Felder: 1 ins Feld Z, 0 ins Feld E.'
+    : 'Erst ganz zuhören, dann schreiben! Überlege: Wie viele Zehner? Die schreibst du zuerst. Dann die Einer.');
   const n = tasks[idx];
 
   const spokeFirst = useRef(false);
@@ -1215,11 +1250,11 @@ function DiktatGame({ onFinish, onShowTip }) {
     const t = setTimeout(() => speak(zahlwort(n)), 250); return () => clearTimeout(t);
   }, [started, idx]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!started) return <AudioStart title="Zahlen-Diktat" onStart={() => { spokeFirst.current = true; setStarted(true); speak(zahlwort(n)); }}>Du hörst eine Zahl. Schreibe sie mit den Ziffern auf. Zuerst die Zehner!</AudioStart>;
+  if (!started) return <AudioStart title="Zahlen-Diktat" onStart={() => { spokeFirst.current = true; setStarted(true); speak(zahlwort(n)); }}>Du hörst eine Zahl. Schreibe sie mit den Ziffern auf.{maxN > 10 && ' Zuerst die Zehner!'}</AudioStart>;
 
   const checkValue = (a) => {
     const ok = a === n;
-    record(ok); track('schreiben', ok); ok ? streak.good() : streak.bad();
+    record(ok); ok ? streak.good() : streak.bad();
     setLast(a);
   };
   const check = () => checkValue(parseInt(answer, 10));
@@ -1232,7 +1267,7 @@ function DiktatGame({ onFinish, onShowTip }) {
       <div className="text-center mb-5"><NumberPrompt n={n} /></div>
       {last === null && (
         <div className="flex flex-col items-center gap-2">
-          {mode === 'stift' ? <HandwriteNumber key={idx} onSubmit={checkValue} /> : <NumPad value={answer} onChange={setAnswer} onSubmit={check} />}
+          {mode === 'stift' ? <HandwriteNumber key={idx} onSubmit={checkValue} optional={maxN <= 10} /> : <NumPad value={answer} onChange={setAnswer} onSubmit={check} />}
           <button onClick={() => setMode(m => (m === 'stift' ? 'tasten' : 'stift'))} className="text-sm font-bold text-indigo-600 underline underline-offset-2">{mode === 'stift' ? 'Lieber tippen' : 'Lieber mit dem Finger schreiben'}</button>
         </div>
       )}
@@ -1260,7 +1295,6 @@ function zahlwortNumbers(maxN) {
 }
 function ZahlwortGame({ onFinish, onShowTip }) {
   const { maxN } = useSettings();
-  const track = useTrack();
   const speak = useSpeak();
   const [tasks] = useState(() => zahlwortNumbers(maxN).map(n => ({ n, tiles: shuffle([...zahlwortParts(n), ...zahlwortDistractors(n)]).map((t, i) => ({ t, id: i })) })));
   const { idx, results, record, next } = useRound(onFinish);
@@ -1274,7 +1308,7 @@ function ZahlwortGame({ onFinish, onShowTip }) {
   const z = zOf(task.n), e = eOf(task.n);
   const dreherWord = e && z !== e && task.n > 20 ? [ONES_COMPOUND[z], 'und', TENS[e]].join('') : null;
 
-  const check = () => { record(ok); track('sprechen', ok); ok ? streak.good() : streak.bad(); setDone(true); speak(zahlwort(task.n)); };
+  const check = () => { record(ok); ok ? streak.good() : streak.bad(); setDone(true); speak(zahlwort(task.n)); };
   const goNext = () => { setBuilt([]); setDone(false); next(); };
 
   return (
@@ -1363,6 +1397,8 @@ const SPOKEN_NUMBERS = (() => {
 // So kann die Erkennung Zahlendreher sicher unterscheiden, rät aber seltener daneben als mit allen 100 Zahlen
 // (Messung mit Computerstimme: 28/34 richtig, 1–2 falsch, Zahlendreher 16/16 erkannt, nie fälschlich „richtig“).
 function grammarFor(n) {
+  // Bis 10: einfach alle Zahlwörter von eins bis zwölf erlauben (sonst bliebe die Liste zu klein)
+  if (n <= 10) return JSON.stringify([...Array(12)].map((_, i) => zahlwort(i + 1)).concat(['[unk]']));
   const set = new Set([n]);
   const z = zOf(n), e = eOf(n);
   if (n < 100 && e && z !== e && e * 10 + z >= 10) set.add(e * 10 + z);
@@ -1489,7 +1525,10 @@ function useNumberListener(enabled) {
 function SprechenGame({ onFinish }) {
   const { maxN, hasAudio, speechOn } = useSettings();
   const speak = useSpeak();
-  const [tasks] = useState(() => { const main = practiceNumbers(ROUND - 2, maxN); return shuffle([...main, ...pickNumbers(2, 13, 19, n => !main.includes(n))]); });
+  const [tasks] = useState(() => {
+    if (maxN <= 10) return practiceNumbers(ROUND, maxN);
+    const main = practiceNumbers(ROUND - 2, maxN); return shuffle([...main, ...pickNumbers(2, 13, 19, n => !main.includes(n))]);
+  });
   const { idx, results, record, next } = useRound(onFinish);
   const [revealed, setRevealed] = useState(false);
   const [rated, setRated] = useState(null);
@@ -1581,18 +1620,21 @@ function SprechenGame({ onFinish }) {
 // SPIELE, LERNPFADE, FREISCHALTEN
 // ==========================================
 const GAMES = [
-  { id: 'blitzblick', title: 'Wie viele sind es?', desc: 'Schau genau und zähle schlau!', icon: Eye, color: 'yellow', comp: BlitzblickGame, badge: { name: 'Adlerauge', emoji: '🦅' } },
-  { id: 'zeigen', title: 'Zahlen zeigen', desc: 'Im Hunderterfeld zeigen', icon: Grid3x3, color: 'amber', comp: ZeigenGame, badge: { name: 'Zeige-Profi', emoji: '👉' } },
-  { id: 'legen', title: 'Zahl legen', desc: 'Zehner und Einer legen', icon: Blocks, color: 'blue', comp: LegenGame, badge: { name: 'Baumeister', emoji: '🏗️' } },
-  { id: 'schreiben', title: 'Zahl schreiben', desc: 'Mit dem Finger schreiben', icon: PenLine, color: 'indigo', comp: SchreibenGame, badge: { name: 'Stellenwert-Star', emoji: '⭐' } },
-  { id: 'hoeren', title: 'Hör-Detektiv', desc: 'Welche Zahl hörst du?', icon: Ear, color: 'violet', comp: HoerenGame, badge: { name: 'Lauscher', emoji: '👂' } },
-  { id: 'diktat', title: 'Zahlen-Diktat', desc: 'Hören und schreiben', icon: Headphones, color: 'fuchsia', comp: DiktatGame, badge: { name: 'Diktat-Ass', emoji: '🎧' } },
-  { id: 'zahlwort', title: 'Zahlwort-Baukasten', desc: 'Zahlwörter bauen', icon: Puzzle, color: 'orange', comp: ZahlwortGame, badge: { name: 'Wort-Baumeister', emoji: '🧩' } },
-  { id: 'sprechen', title: 'Sprech-Probe', desc: 'Laut sprechen, selbst prüfen', icon: Mic, color: 'amber', comp: SprechenGame, badge: { name: 'Sprech-Profi', emoji: '🎤' } }
+  { id: 'blitzblick', title: 'Wie viele sind es?', desc: 'Schau genau und zähle schlau!', icon: Eye, color: 'yellow', comp: BlitzblickGame },
+  { id: 'zeigen', title: 'Zahlen zeigen', desc: 'Im Hunderterfeld zeigen', desc10: 'Im Zehnerstreifen zeigen', desc20: 'Im Zwanzigerfeld zeigen', icon: Grid3x3, color: 'amber', comp: ZeigenGame },
+  { id: 'legen', title: 'Zahl legen', desc: 'Zehner und Einer legen', icon: Blocks, color: 'blue', comp: LegenGame },
+  { id: 'schreiben', title: 'Zahl schreiben', desc: 'Mit dem Finger schreiben', icon: PenLine, color: 'indigo', comp: SchreibenGame },
+  { id: 'hoeren', title: 'Hör-Detektiv', desc: 'Welche Zahl hörst du?', icon: Ear, color: 'violet', comp: HoerenGame },
+  { id: 'diktat', title: 'Zahlen-Diktat', desc: 'Hören und schreiben', icon: Headphones, color: 'fuchsia', comp: DiktatGame },
+  { id: 'zahlwort', title: 'Zahlwort-Baukasten', desc: 'Zahlwörter bauen', icon: Puzzle, color: 'orange', comp: ZahlwortGame },
+  { id: 'sprechen', title: 'Sprech-Probe', desc: 'Laut sprechen, selbst prüfen', icon: Mic, color: 'amber', comp: SprechenGame }
 ];
-// Reihenfolge ist Teil des Banden-Codes – nie umsortieren!
-const gameOrder = GAMES.map(g => g.id);
 const gameById = (id) => GAMES.find(g => g.id === id);
+// Bis 10 gibt es noch nichts zu bündeln und keine zusammengesetzten Zahlwörter:
+// „Zahl legen“, „Zahl schreiben“ (Stellentafel) und den Zahlwort-Baukasten blenden wir dort aus.
+const GAMES_BIS_10 = ['blitzblick', 'zeigen', 'hoeren', 'diktat', 'sprechen'];
+const gameAllowed = (id, maxN) => maxN > 10 || GAMES_BIS_10.includes(id);
+const ZAHLENRAEUME = [10, 20, 100];
 const PATHS = [
   { title: 'Zahlen sehen', icon: Eye, games: ['blitzblick', 'zeigen'], box: 'bg-yellow-400/10 border-yellow-400/40', color: 'text-yellow-300', arrow: 'text-yellow-400/60' },
   { title: 'Zehner & Einer', icon: Blocks, games: ['legen', 'schreiben'], box: 'bg-blue-400/10 border-blue-400/40', color: 'text-blue-300', arrow: 'text-blue-400/60' },
@@ -1601,48 +1643,7 @@ const PATHS = [
 ];
 // Alle Übungen sind von Anfang an frei (so von der Lehrkraft gewünscht). Die Pfeile im Menü zeigen nur eine empfohlene Reihenfolge.
 const UNLOCK_REQ = {};
-const totalMaxScore = GAMES.length * 10;
 const ADMIN_PASSWORD = 'Bande100';
-
-// ==========================================
-// BANDEN-CODE (Spielstand speichern ohne Speicher im Browser)
-// ==========================================
-// Format (9 Zeichen, XXX-XXX-XXX): 8 Spiele à 0–10 Sterne + 6 Bausteine à Stufe 0–3,
-// als Zahl in 8 Base-32-Ziffern + 1 Prüfzeichen. Reihenfolge von gameOrder und SKILLS ist Teil des Formats!
-const CODE32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-const CODE_DIGITS = 8;
-const CODE_MAX = (11n ** BigInt(GAMES.length)) * (4n ** BigInt(SKILLS.length));
-const code32Check = (digits) => CODE32[digits.reduce((acc, v, i) => acc + v * (i + 1), 0) % 31];
-
-const generateCode = (gameProgress, skillLevels) => {
-  let n = 0n;
-  for (const g of gameOrder) n = n * 11n + BigInt(Math.min(10, Math.max(0, gameProgress[g]?.score || 0)));
-  for (const s of SKILLS) n = n * 4n + BigInt(Math.min(3, Math.max(0, skillLevels[s.id] || 0)));
-  const digits = [];
-  for (let i = 0; i < CODE_DIGITS; i++) { digits.unshift(Number(n % 32n)); n /= 32n; }
-  const code = digits.map(v => CODE32[v]).join('') + code32Check(digits);
-  return `${code.slice(0, 3)}-${code.slice(3, 6)}-${code.slice(6)}`;
-};
-const parseCode = (input) => {
-  const clean = input.toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1').replace(/[^0-9A-Z]/g, '');
-  if (clean.length !== CODE_DIGITS + 1) return null;
-  if ([...clean].some(ch => !CODE32.includes(ch))) return null;
-  const digits = [...clean.slice(0, CODE_DIGITS)].map(ch => CODE32.indexOf(ch));
-  if (clean[CODE_DIGITS] !== code32Check(digits)) return null;
-  let n = digits.reduce((acc, v) => acc * 32n + BigInt(v), 0n);
-  if (n >= CODE_MAX) return null;
-  const skills = {};
-  [...SKILLS].reverse().forEach(s => { skills[s.id] = Number(n % 4n); n /= 4n; });
-  const progress = {};
-  [...gameOrder].reverse().forEach(g => { const v = Number(n % 11n); n /= 11n; if (v > 0) progress[g] = { status: 'completed', score: v, max: 10 }; });
-  return { progress, skills };
-};
-const formatCodeInput = (value) => {
-  const raw = value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 9);
-  if (raw.length <= 3) return raw;
-  if (raw.length <= 6) return `${raw.slice(0, 3)}-${raw.slice(3)}`;
-  return `${raw.slice(0, 3)}-${raw.slice(3, 6)}-${raw.slice(6)}`;
-};
 
 // ==========================================
 // FENSTER (Modals)
@@ -1692,102 +1693,6 @@ function RulesModal({ onClose }) {
         <Rule nr={3} title="Schreiben: Zehner zuerst">Wir schreiben trotzdem zuerst die <b style={{ color: '#60a5fa' }}>4</b>, dann die <b style={{ color: '#4ade80' }}>7</b>. Hör erst bis zum Ende zu – dann schreib.</Rule>
         <Rule nr={4} title="Trick fürs schnelle Sehen">Volle Reihen sind Zehner (blau). Ist das ganze Feld voll, ist es 1 Hunderter (rot). Die Lücke in der Mitte hilft: 5 und 5 sind 10. Zähle erst die Reihen, dann die einzelnen Punkte.</Rule>
         <Rule nr={5} title="Besondere Zahlwörter"><b>elf, zwölf</b> · <b>sechzehn</b> (ohne s) · <b>siebzehn</b> (ohne en) · <b>dreißig</b> (mit ß)</Rule>
-      </div>
-    </Modal>
-  );
-}
-
-function BadgeModal({ onClose, gameProgress }) {
-  const all = GAMES.every(g => (gameProgress[g.id]?.score || 0) >= 10);
-  return (
-    <Modal onClose={onClose} wide>
-      <h3 className="text-3xl font-comic text-yellow-300 mb-1 flex items-center gap-2"><Trophy className="w-8 h-8" /> Deine Abzeichen</h3>
-      <p className="text-slate-400 mb-4">Mit 10 Sternen in einer Übung bekommst du ihr Abzeichen.</p>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {GAMES.map(g => {
-          const has = (gameProgress[g.id]?.score || 0) >= 10;
-          return (
-            <div key={g.id} className={`rounded-2xl p-3 text-center border-2 ${has ? 'bg-yellow-400/15 border-yellow-400' : 'bg-slate-800 border-slate-700 opacity-60'}`}>
-              <div className={`text-4xl ${has ? '' : 'grayscale'}`}>{has ? g.badge.emoji : '❔'}</div>
-              <div className="font-black text-sm mt-1">{g.badge.name}</div>
-              <div className="text-xs text-slate-400">{g.title}</div>
-            </div>
-          );
-        })}
-      </div>
-      <div className={`mt-4 rounded-2xl p-4 text-center border-4 ${all ? 'border-yellow-300 bg-yellow-400/20' : 'border-dashed border-slate-600'}`}>
-        <Crown className={`w-10 h-10 mx-auto ${all ? 'text-yellow-300 anim-float' : 'text-slate-600'}`} />
-        <p className="font-black">{all ? 'Du bist Ehrenmitglied der Zehner-Bande!' : 'Alle 8 Abzeichen = Ehrenmitglied der Zehner-Bande'}</p>
-      </div>
-    </Modal>
-  );
-}
-
-function SkillModal({ onClose, skillLog, focusGame, getLockState, onStartGame }) {
-  const skills = focusGame ? SKILLS.filter(s => GAME_SKILLS[focusGame].includes(s.id)) : SKILLS;
-  return (
-    <Modal onClose={onClose} wide border="border-lime-400">
-      <h3 className="text-3xl font-comic text-lime-300 mb-1 flex items-center gap-2"><Target className="w-8 h-8" /> Das kann ich schon:</h3>
-      <p className="text-slate-400 mb-4 text-sm">Es zählen deine letzten 10 Aufgaben – immer nur der erste Versuch.</p>
-      {focusGame && skills.length === 0 && <p className="text-slate-300">Bei der Sprech-Probe kontrollierst du dich selbst. Darum wird sie hier nicht ausgewertet.</p>}
-      <div className="flex flex-col gap-3">
-        {skills.map(s => {
-          const lvl = skillLevel(skillLog[s.id]);
-          const ui = SKILL_LEVEL_UI[lvl];
-          const games = Object.keys(GAME_SKILLS).filter(g => GAME_SKILLS[g].includes(s.id));
-          return (
-            <div key={s.id} className="bg-slate-800/70 rounded-2xl p-3 border border-slate-700">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-bold">{s.label}</span>
-                <span className={`text-sm font-black px-3 py-1 rounded-full border ${ui.cls}`}>{ui.text}</span>
-              </div>
-              {skillLog[s.id]?.fromCode && <p className="text-xs text-slate-500 mt-1">Aus dem Banden-Code übernommen</p>}
-              <div className="flex flex-wrap gap-2 mt-2">
-                {games.map(g => {
-                  const locked = getLockState(g);
-                  return <button key={g} disabled={!!locked} onClick={() => onStartGame(g)} className={`text-xs font-bold px-3 py-1 rounded-full ${locked ? 'bg-slate-800 text-slate-600' : lvl > 0 && lvl < 3 ? 'bg-pink-500 text-white' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'}`}>{gameById(g).title}</button>;
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </Modal>
-  );
-}
-
-function SaveLoadModal({ onClose, gameProgress, setGameProgress, skillLog, setSkillLog }) {
-  const [inputCode, setInputCode] = useState('');
-  const [error, setError] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [currentCode] = useState(() => {
-    const levels = {};
-    SKILLS.forEach(s => { levels[s.id] = skillLevel(skillLog[s.id]); });
-    return generateCode(gameProgress, levels);
-  });
-  const handleLoad = () => {
-    const r = parseCode(inputCode);
-    if (!r) { setError(true); setTimeout(() => setError(false), 1500); return; }
-    setGameProgress(r.progress); setSkillLog(skillLogFromLevels(r.skills));
-    setSuccess(true); setTimeout(onClose, 1300);
-  };
-  return (
-    <Modal onClose={onClose}>
-      <div className="flex flex-col items-center mb-5">
-        <div className="bg-yellow-900/40 p-4 rounded-full mb-3 border border-yellow-400/30"><Key className="w-8 h-8 text-yellow-300" /></div>
-        <h3 className="text-2xl font-black text-center">Dein Banden-Code</h3>
-        <p className="text-slate-400 text-center text-sm mt-2">Schreib dir den Code auf. Darin stecken deine Sterne und dein Können!</p>
-      </div>
-      <div className="bg-slate-950 p-4 rounded-xl border-2 border-yellow-400/50 flex justify-between items-center gap-2 mb-6">
-        <div className="font-mono text-2xl md:text-3xl font-bold tracking-wider text-yellow-300">{currentCode}</div>
-        <button onClick={() => { if (navigator.clipboard) navigator.clipboard.writeText(currentCode).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 2000); }} className="p-2 rounded-lg bg-yellow-900/40 text-yellow-300" title="Code kopieren">{copied ? <Check className="w-6 h-6 text-lime-400" /> : <Copy className="w-6 h-6" />}</button>
-      </div>
-      <div className="border-t border-slate-700 pt-5 flex flex-col gap-3">
-        <p className="text-slate-400 text-center text-sm">Hast du schon einen Code?</p>
-        <input type="text" value={inputCode} maxLength={11} autoCapitalize="characters" autoCorrect="off" spellCheck="false" onChange={(ev) => setInputCode(formatCodeInput(ev.target.value))} onKeyDown={(ev) => ev.key === 'Enter' && handleLoad()} placeholder="XXX-XXX-XXX" className={`w-full bg-slate-950 border-2 rounded-xl p-4 text-white text-center font-mono text-2xl focus:outline-none ${error ? 'border-red-500 anim-shake' : success ? 'border-lime-500' : 'border-slate-700 focus:border-yellow-400'}`} />
-        {error && <p className="text-red-400 text-center text-sm font-bold">Dieser Code stimmt nicht. Prüfe jedes Zeichen!</p>}
-        <button onClick={handleLoad} disabled={!inputCode.trim() || success} className={`w-full font-bold py-4 rounded-xl ${success ? 'bg-lime-600 text-white' : 'bg-yellow-500 hover:bg-yellow-400 text-indigo-950 disabled:opacity-50'}`}>{success ? 'Geladen!' : 'Code laden'}</button>
       </div>
     </Modal>
   );
@@ -1865,7 +1770,7 @@ function AdminAuthModal({ onLogin, onClose, onImpressum }) {
   );
 }
 
-function AdminControlModal({ onClose, gameProgress, setGameProgress, setSkillLog, settings, setSettings, voices, onOpenSheets }) {
+function AdminControlModal({ onClose, settings, setSettings, voices, onOpenSheets }) {
   const [copied, setCopied] = useState(false);
   const speakTest = (choice) => {
     if (choice !== 'geraet') { playNumber(choice, 47).catch(() => {}); return; }
@@ -1887,7 +1792,7 @@ function AdminControlModal({ onClose, gameProgress, setGameProgress, setSkillLog
         <div className="flex flex-col gap-3">
           <h4 className="font-black text-cyan-300">Einstellungen</h4>
           <label className="text-sm text-slate-400">Zahlenraum</label>
-          <Seg value={settings.maxN} options={[{ v: 20, l: 'bis 20' }, { v: 50, l: 'bis 50' }, { v: 100, l: 'bis 100' }]} onChange={v => setSettings(s => ({ ...s, maxN: v }))} />
+          <Seg value={settings.maxN} options={ZAHLENRAEUME.map(v => ({ v, l: `bis ${v}` }))} onChange={v => setSettings(s => ({ ...s, maxN: v }))} />
           <label className="text-sm text-slate-400">„Wie viele sind es?“: Bild sichtbar</label>
           <Seg value={settings.blitzMs} options={[{ v: 1000, l: '1 s' }, { v: 2000, l: '2 s' }, { v: 3000, l: '3 s' }, { v: 0, l: 'immer' }]} onChange={v => setSettings(s => ({ ...s, blitzMs: v }))} />
           <label className="text-sm text-slate-400">Vorlese-Stimme für die Zahlen</label>
@@ -1910,9 +1815,8 @@ function AdminControlModal({ onClose, gameProgress, setGameProgress, setSkillLog
           <div className="flex gap-2 items-center"><code className="flex-1 text-xs bg-slate-950 p-2 rounded-lg break-all">{link}</code><button onClick={() => { navigator.clipboard && navigator.clipboard.writeText(link).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1500); }} className="bg-slate-700 rounded-lg p-2">{copied ? <Check className="w-4 h-4 text-lime-400" /> : <Copy className="w-4 h-4" />}</button></div>
         </div>
         <div className="flex flex-col gap-3">
-          <h4 className="font-black text-cyan-300">Fortschritt</h4>
-          <p className="text-xs text-slate-400">Alle Übungen sind von Anfang an frei. Sterne und Abzeichen sammeln die Kinder trotzdem.</p>
-          <button onClick={() => { setGameProgress({}); setSkillLog({}); onClose(); }} className="bg-red-600 hover:bg-red-500 text-white p-3 rounded-xl font-bold">Fortschritt löschen</button>
+          <h4 className="font-black text-cyan-300">Sterne</h4>
+          <p className="text-xs text-slate-400">Alle Übungen sind von Anfang an frei. Sterne gibt es nur für die einzelne Runde, gespeichert wird nichts. Bis 10 sind „Zahl legen“, „Zahl schreiben“ und der Zahlwort-Baukasten ausgeblendet.</p>
           <h4 className="font-black text-cyan-300 mt-2">Material</h4>
           <button onClick={onOpenSheets} className="bg-indigo-600 hover:bg-indigo-500 text-white p-3 rounded-xl font-bold inline-flex items-center justify-center gap-2"><Printer className="w-5 h-5" /> Arbeitsblätter</button>
         </div>
@@ -1925,12 +1829,12 @@ function AdminControlModal({ onClose, gameProgress, setGameProgress, setSkillLog
 // ARBEITSBLÄTTER (A4, Druck über den Browser – Farben bleiben auch in Schwarz-Weiß unterscheidbar)
 // ==========================================
 const SHEETS = {
-  blitzblick: { title: 'Wie viele Punkte?', task: 'Wie viele Punkte sind es? Schreibe die Zahl in die Kästchen: zuerst die Zehner (Z), dann die Einer (E).', count: 9 },
-  zeigen: { title: 'Zahlen zeigen', task: 'Male die Zahl im Hunderterfeld an. Male zuerst die vollen Zehner-Reihen.', count: 6 },
+  blitzblick: { title: 'Wie viele Punkte?', task: 'Wie viele Punkte sind es? Schreibe die Zahl in die Kästchen: zuerst die Zehner (Z), dann die Einer (E).', task10: 'Wie viele Punkte sind es? Schreibe die Zahl in das Kästchen E. Nur die 10 braucht beide Kästchen.', count: 9 },
+  zeigen: { title: 'Zahlen zeigen', task: 'Male die Zahl im Hunderterfeld an. Male zuerst die vollen Zehner-Reihen.', task10: 'Male die Zahl im Zehnerstreifen an. Die Lücke hilft: Links sind 5.', task20: 'Male die Zahl im Zwanzigerfeld an. Male zuerst die volle Zehner-Reihe.', count: 6 },
   legen: { title: 'Zahlen zeichnen', task: 'Zeichne die Zahl wie mit dem Dienes-Material: Für jeden Zehner einen Strich |, für jeden Einer einen Punkt •. (Ein Hunderter wäre ein Quadrat □.)', count: 8 },
   schreiben: { title: 'Zehner und Einer', task: 'Welche Zahl ist es? Schreibe sie auf. Achtung: Manchmal stehen die Einer zuerst!', count: 12 },
   hoeren: { title: 'Hör-Detektiv', task: 'Hör genau zu! Kreise die Zahl ein, die du hörst.', count: 12, teacherList: true },
-  diktat: { title: 'Zahlen-Diktat', task: 'Hör zu und schreibe die Zahl auf. Zuerst die Zehner, dann die Einer!', count: 20, teacherList: true },
+  diktat: { title: 'Zahlen-Diktat', task: 'Hör zu und schreibe die Zahl auf. Zuerst die Zehner, dann die Einer!', task10: 'Hör zu und schreibe die Zahl auf.', count: 20, teacherList: true },
   zahlwort: { title: 'Zahlwörter', task: 'A: Schreibe das Zahlwort.   B: Schreibe die Zahl.', count: 12 },
   sprechen: { title: 'Sprech-Tandem', task: 'Knickt das Blatt an der gestrichelten Linie. Kind A liest die Zahl vor, Kind B kontrolliert mit dem Zahlwort. Danach tauscht ihr.', count: 13 }
 };
@@ -1940,7 +1844,7 @@ function makeSheetItems(type, maxN) {
   const count = SHEETS[type].count;
   switch (type) {
     case 'blitzblick': {
-      const nums = pickNumbers(count, max <= 20 ? 5 : 11, max);
+      const nums = pickNumbers(count, max <= 10 ? 2 : max <= 20 ? 5 : 11, max);
       return nums.map((n, i) => ({ n, view: ['feld', 'streifen', 'material'][i % 3] }));
     }
     case 'zeigen': return practiceNumbers(count, maxN).map((n, i) => ({ n, asWord: i % 2 === 1 }));
@@ -1956,7 +1860,7 @@ function makeSheetItems(type, maxN) {
       const nums = [...new Set(zahlwortNumbers(maxN).concat(zahlwortNumbers(maxN), zahlwortNumbers(maxN)))].slice(0, count);
       return nums.map((n, i) => ({ n, part: i < Math.ceil(nums.length / 2) ? 'A' : 'B' }));
     }
-    case 'sprechen': { const main = practiceNumbers(count - 3, maxN); return shuffle([...main, ...pickNumbers(3, 11, 19, n => !main.includes(n))]).map(n => ({ n })); }
+    case 'sprechen': { if (maxN <= 10) return practiceNumbers(count, maxN).map(n => ({ n })); const main = practiceNumbers(count - 3, maxN); return shuffle([...main, ...pickNumbers(3, 11, 19, n => !main.includes(n))]).map(n => ({ n })); }
     default: return [];
   }
 }
@@ -1994,16 +1898,17 @@ function SheetPage({ type, maxN, solution, children, subtitle }) {
           <div style={{ fontSize: '8mm', fontWeight: 700, lineHeight: 1.1 }}>{s.title}{solution ? <span style={{ color: COL.sol }}> – Lösung</span> : ''}</div>
         </div>
       </div>
-      <div style={{ background: '#f3f4f6', borderRadius: '2.5mm', padding: '2.5mm 4mm', margin: '3.5mm 0 4mm', fontSize: '4.2mm', lineHeight: 1.35 }}>{s.task}</div>
+      <div style={{ background: '#f3f4f6', borderRadius: '2.5mm', padding: '2.5mm 4mm', margin: '3.5mm 0 4mm', fontSize: '4.2mm', lineHeight: 1.35 }}>{maxN <= 10 && s.task10 ? s.task10 : maxN <= 20 && s.task20 ? s.task20 : s.task}</div>
       {children}
       <div style={{ position: 'absolute', bottom: '6mm', left: '14mm', right: '14mm', display: 'flex', justifyContent: 'space-between', fontSize: '2.8mm', color: '#9ca3af' }}>
-        <span>Die Zehner-Bande · Arbeitsblatt</span><span>Tipp: Zehner zuerst schreiben!</span>
+        <span>Die Zehner-Bande · Arbeitsblatt</span>{maxN > 10 && <span>Tipp: Zehner zuerst schreiben!</span>}
       </div>
     </div>
   );
 }
 
-function SheetContent({ type, items, solution }) {
+function SheetContent({ type, items, solution, maxN }) {
+  const rows = fieldRows(maxN);
   const grid = (cols, gap = '5mm') => ({ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap });
   const num = (i) => <span style={{ fontSize: '3.4mm', fontWeight: 700, color: '#6b7280' }}>{i + 1}</span>;
   const solCol = { color: COL.sol, fontWeight: 700 };
@@ -2015,7 +1920,7 @@ function SheetContent({ type, items, solution }) {
             <div style={{ position: 'absolute', top: '1.5mm', left: '2.5mm' }}>{num(i)}</div>
             <div style={{ height: '40mm', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {it.view === 'material' ? <TensOnes z={zOf(it.n)} e={eOf(it.n)} unit={10} maxWidth="50mm" />
-                : <HundredField n={it.n} size={160} showEmpty={it.view === 'feld'} rowsVisible={it.view === 'feld' ? 10 : Math.ceil(it.n / 10)} />}
+                : <HundredField n={it.n} size={160} showEmpty={it.view === 'feld' || maxN <= 20} rowsVisible={it.view === 'feld' || maxN <= 20 ? rows : Math.ceil(it.n / 10)} />}
             </div>
             <PaperZE n={it.n} solution={solution} />
           </div>
@@ -2027,7 +1932,7 @@ function SheetContent({ type, items, solution }) {
         {items.map((it, i) => (
           <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2mm' }}>
             <div style={{ fontSize: it.asWord ? '5mm' : '8mm', fontWeight: 700, minHeight: '10mm', display: 'flex', alignItems: 'center', gap: '2mm' }}>{num(i)} {it.asWord ? zahlwort(it.n) : it.n}</div>
-            <HundredField n={solution ? it.n : 0} size={205} mono={!solution} />
+            <HundredField n={solution ? it.n : 0} size={205} rowsVisible={rows} mono={!solution} />
           </div>
         ))}
       </div>
@@ -2156,8 +2061,9 @@ function TeacherList({ type, items, maxN }) {
 }
 
 function SheetStudio({ initialType, maxN: defaultMax, onClose }) {
-  const [type, setType] = useState(initialType || 'blitzblick');
   const [maxN, setMaxN] = useState(defaultMax);
+  const [chosenType, setType] = useState(initialType && gameAllowed(initialType, defaultMax) ? initialType : 'blitzblick');
+  const type = gameAllowed(chosenType, maxN) ? chosenType : 'blitzblick';
   const [withSolution, setWithSolution] = useState(true);
   const [seed, setSeed] = useState(0);
   const items = useMemo(() => makeSheetItems(type, maxN), [type, maxN, seed]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2167,9 +2073,9 @@ function SheetStudio({ initialType, maxN: defaultMax, onClose }) {
     const fit = () => { const w = scrollRef.current ? scrollRef.current.clientWidth - 32 : 800; setScale(Math.min(1, w / 794)); };
     fit(); window.addEventListener('resize', fit); return () => window.removeEventListener('resize', fit);
   }, []);
-  const pages = [<SheetPage key="a" type={type} maxN={maxN}><SheetContent type={type} items={items} solution={false} /></SheetPage>];
+  const pages = [<SheetPage key="a" type={type} maxN={maxN}><SheetContent type={type} items={items} maxN={maxN} solution={false} /></SheetPage>];
   if (SHEETS[type].teacherList) pages.push(<TeacherList key="t" type={type} items={items} maxN={maxN} />);
-  if (withSolution && type !== 'sprechen') pages.push(<SheetPage key="s" type={type} maxN={maxN} solution><SheetContent type={type} items={items} solution /></SheetPage>);
+  if (withSolution && type !== 'sprechen') pages.push(<SheetPage key="s" type={type} maxN={maxN} solution><SheetContent type={type} items={items} maxN={maxN} solution /></SheetPage>);
 
   return (
     <div className="sheet-studio fixed inset-0 z-[220] bg-slate-950/95 flex flex-col">
@@ -2180,13 +2086,13 @@ function SheetStudio({ initialType, maxN: defaultMax, onClose }) {
             <button onClick={onClose} className="bg-slate-800 hover:bg-slate-700 rounded-full p-2" aria-label="Schließen"><X className="w-6 h-6" /></button>
           </div>
           <div className="flex flex-wrap gap-2">
-            {GAMES.map(g => (
+            {GAMES.filter(g => gameAllowed(g.id, maxN)).map(g => (
               <button key={g.id} onClick={() => setType(g.id)} className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold border-2 ${type === g.id ? 'bg-yellow-400 text-indigo-950 border-yellow-300' : 'bg-slate-800 border-slate-700 hover:border-slate-500'}`}><g.icon className="w-4 h-4" />{g.title}</button>
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="text-slate-400">Zahlenraum:</span>
-            {[20, 50, 100].map(v => <button key={v} onClick={() => setMaxN(v)} className={`px-3 py-1.5 rounded-lg font-bold ${maxN === v ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800'}`}>bis {v}</button>)}
+            {ZAHLENRAEUME.map(v => <button key={v} onClick={() => setMaxN(v)} className={`px-3 py-1.5 rounded-lg font-bold ${maxN === v ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800'}`}>bis {v}</button>)}
             <label className="flex items-center gap-2 ml-2"><input type="checkbox" checked={withSolution} onChange={ev => setWithSolution(ev.target.checked)} /> Lösungsblatt</label>
             <button onClick={() => setSeed(s => s + 1)} className="ml-auto inline-flex items-center gap-2 bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-xl font-bold"><Shuffle className="w-4 h-4" /> Neue Zahlen</button>
             <button onClick={() => window.print()} className="inline-flex items-center gap-2 bg-yellow-400 hover:bg-yellow-300 text-indigo-950 px-5 py-2 rounded-xl font-black"><Printer className="w-5 h-5" /> Drucken</button>
@@ -2207,35 +2113,29 @@ function SheetStudio({ initialType, maxN: defaultMax, onClose }) {
 // HAUPT-APP
 // ==========================================
 export default function App() {
-  const [gameState, setGameState] = useState('menu');
-  const [activeGame, setActiveGame] = useState(null);
-  const [finalScore, setFinalScore] = useState(0);
-  const [newBadge, setNewBadge] = useState(null);
-  const [runId, setRunId] = useState(0);
-  const [gameProgress, setGameProgress] = useState({});
-  const [skillLog, setSkillLog] = useState({});
-  const [tipMessage, setTipMessage] = useState(null);
-  const [modal, setModal] = useState(null); // rules | badges | code | adminAuth | admin
-  const [skillModal, setSkillModal] = useState(null);
-  const [impressum, setImpressum] = useState(null);
-  const [sheetType, setSheetType] = useState(null);
-  const [hudAnim, setHudAnim] = useState(false);
   const voices = useLocalGermanVoices();
   const [settings, setSettings] = useState(() => ({ ...readUrlSettings(), audioOn: true, voiceURI: null }));
+  // Ohne ?zr= im Link wählt das Kind beim Start zuerst den Zahlenraum
+  const [gameState, setGameState] = useState(() => (settings.zrFromLink ? 'menu' : 'zahlenraum'));
+  const [activeGame, setActiveGame] = useState(null);
+  const [finalScore, setFinalScore] = useState(0);
+  const [runId, setRunId] = useState(0);
+  // Sterne nur für diese Sitzung und diesen Zahlenraum (keine Speicherung, kein Code)
+  const [gameProgress, setGameProgress] = useState({});
+  const [tipMessage, setTipMessage] = useState(null);
+  const [modal, setModal] = useState(null); // rules | adminAuth | admin
+  const [impressum, setImpressum] = useState(null);
+  const [sheetType, setSheetType] = useState(null);
 
   const voice = useMemo(() => voices.find(v => v.voiceURI === settings.voiceURI) || voices.find(v => /de[-_]DE/i.test(v.lang)) || voices[0] || null, [voices, settings.voiceURI]);
   const settingsValue = useMemo(() => ({ ...settings, voice, audioOn: settings.audioOn, hasAudio: settings.audioOn && (settings.voiceChoice !== 'geraet' || !!voice) }), [settings, voice]);
 
-  const globalScore = GAMES.reduce((a, g) => a + (gameProgress[g.id]?.score || 0), 0);
+  // Neuer Zahlenraum = neue Sterne (sonst stünden Sterne „bis 10“ neben Sternen „bis 100“)
+  useEffect(() => { setGameProgress({}); }, [settings.maxN]);
+  const chooseZahlenraum = (zr) => { setSettings(s => ({ ...s, maxN: zr })); setGameState('menu'); };
 
-  const track = useCallback((skillId, ok) => {
-    setSkillLog(prev => {
-      const entry = prev[skillId] || { window: [] };
-      const window = [...entry.window, !!ok].slice(-10);
-      return { ...prev, [skillId]: { window } };
-    });
-  }, []);
-  const skillContext = useMemo(() => ({ track }), [track]);
+  const visiblePaths = PATHS.map(p => ({ ...p, games: p.games.filter(id => gameAllowed(id, settings.maxN)) })).filter(p => p.games.length > 0);
+  const visibleGames = visiblePaths.flatMap(p => p.games);
 
   const getLockState = (id) => {
     const req = UNLOCK_REQ[id];
@@ -2245,21 +2145,19 @@ export default function App() {
   };
 
   const startGame = (id) => {
-    if (getLockState(id)) return;
-    setActiveGame(id); setRunId(r => r + 1); setNewBadge(null); setTipMessage(null); setGameState('playing');
+    if (getLockState(id) || !gameAllowed(id, settings.maxN)) return;
+    setActiveGame(id); setRunId(r => r + 1); setTipMessage(null); setGameState('playing');
     setGameProgress(p => ({ ...p, [id]: { ...(p[id] || { score: 0, max: 10 }), status: p[id]?.status === 'completed' ? 'completed' : 'started' } }));
   };
 
   const handleFinish = (score, max) => {
     const stars = Math.floor((score / max) * 10);
     const prev = gameProgress[activeGame]?.score || 0;
-    if (stars >= 10 && prev < 10) setNewBadge(activeGame);
     setGameProgress(p => ({ ...p, [activeGame]: { status: 'completed', score: Math.max(prev, stars), max: 10 } }));
-    setFinalScore(stars); setHudAnim(true); setGameState('finished');
+    setFinalScore(stars); setGameState('finished');
   };
 
   const ActiveComp = activeGame ? gameById(activeGame).comp : null;
-  const badgeGame = newBadge ? gameById(newBadge) : null;
   const bg = 'bg-indigo-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-800 via-indigo-950 to-slate-950';
 
   const HeadBtn = ({ onClick, icon: Icon, label, cls }) => (
@@ -2271,11 +2169,8 @@ export default function App() {
       <style>{appStyles}</style>
 
       {modal === 'rules' && <RulesModal onClose={() => setModal(null)} />}
-      {modal === 'badges' && <BadgeModal onClose={() => setModal(null)} gameProgress={gameProgress} />}
-      {modal === 'code' && <SaveLoadModal onClose={() => setModal(null)} gameProgress={gameProgress} setGameProgress={setGameProgress} skillLog={skillLog} setSkillLog={setSkillLog} />}
       {modal === 'adminAuth' && <AdminAuthModal onClose={() => setModal(null)} onLogin={() => setModal('admin')} onImpressum={() => { setModal(null); setImpressum('impressum'); }} />}
-      {modal === 'admin' && <AdminControlModal onClose={() => setModal(null)} gameProgress={gameProgress} setGameProgress={setGameProgress} setSkillLog={setSkillLog} settings={settings} setSettings={setSettings} voices={voices} onOpenSheets={() => { setModal(null); setSheetType('blitzblick'); }} />}
-      {skillModal && <SkillModal onClose={() => setSkillModal(null)} skillLog={skillLog} focusGame={skillModal.focus} getLockState={getLockState} onStartGame={(id) => { setSkillModal(null); startGame(id); }} />}
+      {modal === 'admin' && <AdminControlModal onClose={() => setModal(null)} settings={settings} setSettings={setSettings} voices={voices} onOpenSheets={() => { setModal(null); setSheetType('blitzblick'); }} />}
       {impressum && <ImpressumModal section={impressum} onClose={() => setImpressum(null)} />}
       {tipMessage && <TipModal message={tipMessage} onClose={() => setTipMessage(null)} />}
       {sheetType && <SheetStudio initialType={sheetType} maxN={settings.maxN} onClose={() => setSheetType(null)} />}
@@ -2285,19 +2180,49 @@ export default function App() {
         <div className="fixed top-2 md:top-4 left-2 right-2 md:left-4 md:right-4 z-[100] flex justify-between items-start pointer-events-none gap-1 md:gap-2 no-print">
           <div className="pointer-events-auto"><HeadBtn onClick={() => setModal('rules')} icon={BookOpen} label="Banden-Regeln" cls="text-yellow-300 border-yellow-500/50" /></div>
           <div className="flex-1 flex justify-center gap-1 md:gap-2 pointer-events-auto flex-wrap">
-            <HeadBtn onClick={() => setModal('badges')} icon={Award} label="Abzeichen" cls="text-amber-300 border-amber-400/50" />
-            <HeadBtn onClick={() => setSkillModal({ focus: null })} icon={Target} label="Das kann ich schon:" cls="text-lime-300 border-lime-500/50" />
-            <HeadBtn onClick={() => setModal('code')} icon={Key} label="Code" cls="text-pink-300 border-pink-500/50" />
             <HeadBtn onClick={() => setSheetType(activeGame || 'blitzblick')} icon={Printer} label="Arbeitsblätter" cls="text-sky-300 border-sky-500/50" />
             <button onClick={() => setModal('adminAuth')} className="opacity-30 hover:opacity-100 p-2" aria-label="Lehrer-Bereich"><Settings className="w-5 h-5 text-slate-400" /></button>
           </div>
-          <div className="pointer-events-auto">
-            <div onAnimationEnd={() => setHudAnim(false)} className={`bg-slate-900/90 border-2 border-yellow-400 py-2 px-3 md:px-4 rounded-full flex items-center gap-1.5 shadow-md ${hudAnim ? 'anim-hud' : ''}`}>
-              <Star className="w-5 h-5 text-yellow-300 fill-yellow-300" />
-              <span className="text-white font-black text-lg">{globalScore} <span className="text-yellow-300/70 text-xs">/ {totalMaxScore}</span></span>
+          {gameState !== 'zahlenraum' && (
+            <div className="pointer-events-auto">
+              <button onClick={() => setGameState('zahlenraum')} title="Zahlenraum wechseln" className="bg-slate-900/90 border-2 border-yellow-400 py-2 px-3 md:px-4 rounded-full flex items-center gap-1.5 shadow-md text-white font-black whitespace-nowrap hover:bg-slate-800">
+                <Zap className="w-5 h-5 text-yellow-300 fill-yellow-300" /> bis {settings.maxN}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ZAHLENRAUM WÄHLEN (Startbild) */}
+        {gameState === 'zahlenraum' && (
+          <div className={`min-h-screen overflow-x-hidden ${bg} text-indigo-50`}>
+            <div className="min-h-screen storm-dots p-4 flex flex-col items-center justify-center pt-24 pb-12">
+              <div className="flex items-end justify-center gap-6 mb-4">
+                <div className="anim-float"><ZackiSvg size={80} /></div>
+                <h1 className="text-5xl md:text-7xl font-comic text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-300 to-amber-400 drop-shadow-lg pb-1 leading-none text-center">Die <span className="sm:whitespace-nowrap">Zehner-<br className="sm:hidden" />Bande</span></h1>
+                <div className="anim-float" style={{ animationDelay: '1.2s' }}><EmilSvg size={62} /></div>
+              </div>
+              <p className="text-2xl md:text-3xl font-black text-center mb-8">Mit welchen Zahlen willst du heute üben?</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 w-full max-w-4xl">
+                {ZAHLENRAEUME.map(zr => (
+                  <button key={zr} onClick={() => chooseZahlenraum(zr)} className={`flex flex-col items-center justify-between gap-3 bg-slate-900/80 hover:bg-slate-800 border-4 rounded-[2rem] p-5 md:p-6 active:scale-95 hover:scale-105 transition-all ${settings.maxN === zr && settings.zrFromLink ? 'border-yellow-300' : 'border-yellow-400/40 hover:border-yellow-300'}`}>
+                    <span className="text-lg font-black text-indigo-200 uppercase tracking-widest">Zahlen bis</span>
+                    <span className="text-7xl font-comic text-yellow-300 leading-none">{zr}</span>
+                    <div className="bg-white rounded-2xl p-2 w-full flex items-center justify-center min-h-[96px]">
+                      {zr === 10 && <HundredField n={10} size={200} rowsVisible={1} />}
+                      {zr === 20 && <HundredField n={20} size={200} rowsVisible={2} />}
+                      {zr === 100 && <HundredField n={100} size={110} />}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <footer className="mt-10 text-center text-xs sm:text-sm text-slate-500">
+                <button onClick={() => setImpressum('impressum')} className="hover:text-slate-300 hover:underline underline-offset-2">Impressum</button>
+                <span className="mx-2" aria-hidden="true">·</span>
+                <button onClick={() => setImpressum('datenschutz')} className="hover:text-slate-300 hover:underline underline-offset-2">Datenschutz</button>
+              </footer>
             </div>
           </div>
-        </div>
+        )}
 
         {/* MENÜ */}
         {gameState === 'menu' && (
@@ -2311,17 +2236,14 @@ export default function App() {
                   <h1 className="text-6xl md:text-7xl lg:text-8xl font-comic text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-yellow-300 to-amber-400 drop-shadow-lg pb-1 leading-none text-center">Die <span className="sm:whitespace-nowrap">Zehner-<br className="sm:hidden" />Bande</span></h1>
                   <div className="anim-float" style={{ animationDelay: '1.2s' }}><EmilSvg size={72} /></div>
                 </div>
-                <p className="text-indigo-100 font-bold text-lg md:text-xl relative">Zacki Zehner und Emil Einer sind die Zehner-Bande. Mit ihnen lernst du die Zahlen bis {settings.maxN}: <span className="text-yellow-300">sehen</span>, <span className="text-blue-300">legen</span>, <span className="text-violet-300">hören</span> und <span className="text-orange-300">sprechen</span>!</p>
-                <div className="mt-6 max-w-md mx-auto relative">
-                  <div className="h-4 bg-slate-900/80 rounded-full overflow-hidden border-2 border-yellow-400/40">
-                    <div className="h-full bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-400 transition-all duration-1000" style={{ width: `${(globalScore / totalMaxScore) * 100}%` }} />
-                  </div>
-                  <p className="text-sm text-indigo-200 mt-2 font-bold">{globalScore} von {totalMaxScore} Sternen gesammelt</p>
-                </div>
+                <p className="text-indigo-100 font-bold text-lg md:text-xl relative">Zacki Zehner und Emil Einer sind die Zehner-Bande. Mit ihnen lernst du die Zahlen bis {settings.maxN}: <span className="text-yellow-300">sehen</span>, {settings.maxN > 10 && <><span className="text-blue-300">legen</span>, </>}<span className="text-violet-300">hören</span> und <span className="text-orange-300">sprechen</span>!</p>
+                <button onClick={() => setGameState('zahlenraum')} className="mt-5 relative inline-flex items-center gap-2 bg-slate-900/70 hover:bg-slate-800 border-2 border-yellow-400/50 text-yellow-200 font-bold px-4 py-2 rounded-full active:scale-95">
+                  <Zap className="w-4 h-4 fill-yellow-300 text-yellow-300" /> Andere Zahlen wählen
+                </button>
               </div>
 
               <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {PATHS.map((path, pi) => (
+                {visiblePaths.map((path, pi) => (
                   <div key={path.title} className={`${path.box} border-2 rounded-3xl p-4 md:p-6 backdrop-blur-sm`}>
                     <h2 className={`${path.color} font-black text-lg md:text-xl uppercase tracking-widest mb-4 flex items-center justify-center gap-3`}><span className="text-sm opacity-60">{pi + 1}</span><path.icon className="w-6 h-6" /> {path.title}</h2>
                     <div className="flex flex-col sm:flex-row items-stretch justify-center gap-3">
@@ -2330,7 +2252,7 @@ export default function App() {
                         return (
                           <React.Fragment key={id}>
                             {i > 0 && <ArrowRight className={`w-8 h-8 ${path.arrow} rotate-90 sm:rotate-0 flex-shrink-0 self-center`} />}
-                            <MenuButton number={gameOrder.indexOf(id) + 1} progress={gameProgress[id]} lockState={getLockState(id)} icon={g.icon} color={g.color} title={g.title} desc={g.desc} onClick={() => startGame(id)} />
+                            <MenuButton number={visibleGames.indexOf(id) + 1} progress={gameProgress[id]} lockState={getLockState(id)} icon={g.icon} color={g.color} title={g.title} desc={settings.maxN <= 10 && g.desc10 ? g.desc10 : settings.maxN <= 20 && g.desc20 ? g.desc20 : g.desc} onClick={() => startGame(id)} />
                           </React.Fragment>
                         );
                       })}
@@ -2359,14 +2281,7 @@ export default function App() {
               </div>
               <p className="text-2xl text-slate-300 mb-5 font-bold">Du hast <span className="bg-yellow-300 text-yellow-950 px-4 py-1 rounded-xl mx-1">{finalScore} von 10</span> Sternen!</p>
               {finalScore < 9 && Object.values(UNLOCK_REQ).includes(activeGame) && <p className="text-pink-200 mb-5">Mit 9 Sternen schaltest du die nächste Übung frei. Du schaffst das!</p>}
-              {badgeGame && (
-                <div className="mb-5 p-4 rounded-2xl border-4 border-yellow-300 bg-yellow-400/15 anim-pop">
-                  <div className="text-5xl anim-float">{badgeGame.badge.emoji}</div>
-                  <p className="font-black text-xl mt-2">Neues Abzeichen: <span className="text-yellow-300">{badgeGame.badge.name}</span>!</p>
-                </div>
-              )}
               <div className="flex flex-col gap-3">
-                {GAME_SKILLS[activeGame].length > 0 && <button onClick={() => setSkillModal({ focus: activeGame })} className="flex items-center justify-center gap-3 bg-slate-800 hover:bg-slate-700 border-2 border-lime-500/60 text-lime-300 font-black text-lg py-3 rounded-2xl"><Target className="w-6 h-6" /> Das kann ich schon:</button>}
                 <button onClick={() => startGame(activeGame)} className="flex items-center justify-center gap-3 bg-yellow-400 hover:bg-yellow-300 text-indigo-950 font-black text-xl py-4 rounded-2xl active:scale-95"><RotateCcw className="w-6 h-6" /> Nochmal spielen</button>
                 <button onClick={() => setSheetType(activeGame)} className="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-sky-300 font-bold py-3 rounded-2xl border-2 border-sky-500/40"><Printer className="w-5 h-5" /> Passendes Arbeitsblatt</button>
                 <button onClick={() => setGameState('menu')} className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-lg py-3 rounded-2xl">Zurück zum Menü</button>
@@ -2388,9 +2303,7 @@ export default function App() {
                 </div>
               </div>
               <div className="paper w-full rounded-[2.5rem] shadow-2xl border-4 border-indigo-900 p-4 md:p-8 min-h-[420px] text-slate-800">
-                <SkillContext.Provider value={skillContext}>
-                  <ActiveComp key={runId} onFinish={handleFinish} onShowTip={setTipMessage} />
-                </SkillContext.Provider>
+                <ActiveComp key={runId} onFinish={handleFinish} onShowTip={setTipMessage} />
               </div>
             </div>
           </div>
@@ -2402,7 +2315,7 @@ export default function App() {
 
 const GAME_HELP = {
   blitzblick: 'Tippe auf „Zeig her!“. Das Bild erscheint kurz. Mit „Nochmal ansehen“ kannst du es noch dreimal anschauen, danach bleibt es stehen. Wie viele Punkte oder Würfel waren es? Schreib die Zahl mit dem Finger: Zehner ins Feld Z, Einer ins Feld E (das Feld H brauchst du nur für die 100). Tipp: Volle Reihen und Stangen sind Zehner.',
-  zeigen: 'Tippe im Hunderterfeld auf den Punkt, bis zu dem die Zahl reicht. Alle Punkte davor werden mit angemalt. Mit −1 und +1 kannst du verbessern.',
+  zeigen: 'Hör dir die Zahl an (mit „Hören“ so oft du willst). Tippe im Punktefeld auf den Punkt, bis zu dem die Zahl reicht. Alle Punkte davor werden mit angemalt. Mit −1 und +1 kannst du verbessern.',
   legen: 'Zieh blaue Zehnerstangen und grüne Einerwürfel vom Material-Tisch auf die Lege-Matte. Zum Zurücklegen ziehst du sie zurück auf den Tisch. Antippen geht auch. Liegen 10 Einer auf der Matte, tauschst du sie gegen 1 Zehnerstange.',
   schreiben: 'Schau dir die Aufgabe an und schreib die Zahl mit dem Finger: zuerst die Zehner ins Feld Z, dann die Einer ins Feld E. Unter dem Feld steht, welche Ziffer die App liest. Stimmt sie nicht, wisch sie weg und schreib neu. Du kannst auch auf „Lieber tippen“ gehen.',
   hoeren: 'Hör dir die Zahl an (du kannst sie so oft hören, wie du willst) und tippe die richtige Zahl an.',
