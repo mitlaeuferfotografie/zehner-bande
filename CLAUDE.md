@@ -1,6 +1,6 @@
 # Die Zehner-Bande – Anweisung für Claude Code
 
-Stand: 09.10.2026. Diese Datei ist die Übergabe aus der Entwicklung in Claude (Cowork) an Claude Code.
+Stand: 11.10.2026. Diese Datei ist die Übergabe aus der Entwicklung in Claude (Cowork) an Claude Code.
 
 ## Deine Rolle
 Du arbeitest für eine Grundschullehrkraft in NRW (Musik und Deutsch, unterrichtet auch Mathe). Antworte auf **Deutsch** und sprich sie mit **Du** an. **Hinterfrage Ideen kritisch** und beschönige nichts. Die Kinder sind in Klasse 2 (7–8 Jahre). Texte in der App: kurz, kindgerecht, fehlerfrei. Zahlwörter und Rechenwege genau prüfen.
@@ -81,7 +81,7 @@ Die Lehrkraft möchte später ihre eigene Stimme verwenden. Vorgehen: Sie nimmt 
 - **Impressum/Datenschutz** am 09.10.2026 mit Freigabe aktualisiert: Banden-Code-Satz ersetzt („Sterne nur für die aktuelle Runde“), neuer Abschnitt 3 „Mikrofon, Spracherkennung und Vorlesen“, Lizenzzeilen (vosk-browser/Vosk-Modell Apache 2.0, Piper MIT, Thorsten-Voice CC0, M-AILABS-Lizenz, MNIST CC BY-SA 3.0 mit Urhebern), Stand Oktober 2026. Ändert sich an Mikrofon, Stimmen oder Speicherung etwas, muss dieser Text mit (nur nach Freigabe).
 - **Übungspass** (Papier zum Ausmalen nach jeder Runde) als Ersatz für das Speichern: von der Lehrkraft gewünscht, noch nicht gebaut.
 - Spracherkennung mit Kindern testen. Die Lehrkraft meldet die Test-Info-Zeilen, damit lässt sich `MIN_CONF` einstellen.
-- Handschrift 1/7: Seit 09.10.2026 prüft `refineOneSeven` bei 1 oder 7 zusätzlich den Schreibweg (Querstrich bzw. flacher Strich oben → 7; steiler Aufstrich unterhalb der Spitze oder senkrechter Strich → 1). Mit simulierten Strichen getestet (8/8 richtig, 0/2/3/4/9 unverändert). **Mit echten Kinderschriften auf dem iPad noch testen.**
+- Handschrift (11.10.2026): `recognizeDigit(canvas, strokes)` zeichnet die Ziffer aus dem Schreibweg neu, immer mit gleich dünnem Strich (`DIGIT_LW`). Vorher liefen bei klein geschriebenen Ziffern die Schleifen zu (6→5, 8→3, 9→3). Test mit 1.800 simulierten Ziffern: vorher 1.731, jetzt 1.795 richtig. **1/7:** Die 7 wird in der Klasse immer mit Querstrich geschrieben, darum entscheidet `refineOneSeven` nur nach dem Querstrich (mit → 7, ohne → 1). **Mit echten Kinderschriften auf dem iPad noch testen.**
 - Eintrag der App in `Anweisung_Cowork_Lern-Apps_Allgemein.md` (Tabelle „Die Apps“) und neue Aufgabentypen in `Baukasten_Aufgabentypen.md` stehen noch aus.
 - Auf echten iPads testen: Ziehen, Fingerschreiben, Ton, Mikrofon, Ladezeit (ca. 50 MB bei eingeschalteter Spracherkennung).
 

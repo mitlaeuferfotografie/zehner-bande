@@ -910,22 +910,47 @@ function digitWeights() {
   return DIGIT_W;
 }
 
-// Bild aus dem Schreibfeld → 28×28 wie bei MNIST (Rahmen, längste Seite 20 px, nach Schwerpunkt zentriert) → Ziffer
-function recognizeDigit(canvas) {
-  const w = canvas.width, h = canvas.height;
-  const data = canvas.getContext('2d').getImageData(0, 0, w, h).data;
-  let minX = w, minY = h, maxX = -1, maxY = -1;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    if (data[(y * w + x) * 4 + 3] > 40) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+// Bild aus dem Schreibfeld → 28×28 wie bei MNIST (längste Seite 20 px, nach Schwerpunkt zentriert) → Ziffer.
+// Gibt es den Schreibweg (strokes), wird die Ziffer daraus neu gezeichnet – immer mit gleich dünnem Strich,
+// egal wie groß das Kind schreibt. Vorher wurde das Bild nur verkleinert: Kleine Ziffern bekamen dadurch einen sehr
+// dicken Strich, Schleifen liefen zu, und aus 6, 8 oder 9 wurde z. B. eine 5 oder 3 (gefunden am 11.10.2026).
+const DIGIT_LW = 2.4; // Strichbreite im 28×28-Bild (wie bei MNIST)
+function recognizeDigit(canvas, strokes) {
+  const pts = strokes ? strokes.flat() : [];
+  let mid, dw, dh;
+  if (pts.length) {
+    const xs = pts.map(q => q.x), ys = pts.map(q => q.y);
+    const minX = Math.min(...xs), minY = Math.min(...ys);
+    const bw = Math.max(...xs) - minX, bh = Math.max(...ys) - minY;
+    const sc = (20 - DIGIT_LW) / Math.max(bw, bh, 1);
+    dw = bw * sc + DIGIT_LW; dh = bh * sc + DIGIT_LW;
+    const k = 4; // vierfach größer zeichnen, dann glatt verkleinern
+    mid = document.createElement('canvas'); mid.width = Math.max(1, Math.round(dw * k)); mid.height = Math.max(1, Math.round(dh * k));
+    const mc = mid.getContext('2d');
+    mc.strokeStyle = '#000'; mc.fillStyle = '#000'; mc.lineWidth = DIGIT_LW * k; mc.lineCap = 'round'; mc.lineJoin = 'round';
+    const tx = (q) => [((q.x - minX) * sc + DIGIT_LW / 2) * k, ((q.y - minY) * sc + DIGIT_LW / 2) * k];
+    for (const st of strokes) {
+      if (!st.length) continue;
+      mc.beginPath(); const [x0, y0] = tx(st[0]);
+      if (st.length === 1) { mc.arc(x0, y0, DIGIT_LW * k / 2, 0, 2 * Math.PI); mc.fill(); continue; }
+      mc.moveTo(x0, y0); for (let i = 1; i < st.length; i++) mc.lineTo(...tx(st[i])); mc.stroke();
+    }
+  } else {
+    const w = canvas.width, h = canvas.height;
+    const data = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4 + 3] > 40) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    }
+    if (maxX < 0) return null;
+    const bw = maxX - minX + 1, bh = maxY - minY + 1;
+    const sc = 20 / Math.max(bw, bh);
+    dw = bw * sc; dh = bh * sc;
+    // in zwei Schritten verkleinern (glatter)
+    mid = document.createElement('canvas'); mid.width = Math.max(1, Math.round(dw * 4)); mid.height = Math.max(1, Math.round(dh * 4));
+    const mc = mid.getContext('2d'); mc.imageSmoothingEnabled = true; mc.imageSmoothingQuality = 'high';
+    mc.drawImage(canvas, minX, minY, bw, bh, 0, 0, mid.width, mid.height);
   }
-  if (maxX < 0) return null;
-  const bw = maxX - minX + 1, bh = maxY - minY + 1;
-  const sc = 20 / Math.max(bw, bh);
-  const dw = bw * sc, dh = bh * sc;
-  // in zwei Schritten verkleinern (glatter)
-  const mid = document.createElement('canvas'); mid.width = Math.max(1, Math.round(dw * 4)); mid.height = Math.max(1, Math.round(dh * 4));
-  const mc = mid.getContext('2d'); mc.imageSmoothingEnabled = true; mc.imageSmoothingQuality = 'high';
-  mc.drawImage(canvas, minX, minY, bw, bh, 0, 0, mid.width, mid.height);
   const draw = (ox, oy) => {
     const c = document.createElement('canvas'); c.width = 28; c.height = 28;
     const cx = c.getContext('2d'); cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
@@ -951,43 +976,29 @@ function recognizeDigit(canvas) {
   const mxo = Math.max(...out); const ex = out.map(v => Math.exp(v - mxo)); const tot = ex.reduce((a, b) => a + b, 0);
   const probs = ex.map(v => v / tot);
   const digit = probs.indexOf(Math.max(...probs));
-  return { digit, conf: probs[digit], aspect: bh / bw, p1: probs[1], p7: probs[7] };
+  return { digit, conf: probs[digit], aspect: dh / dw, p1: probs[1], p7: probs[7] };
 }
 
-// Die deutsche 1 mit Aufstrich sieht für das Netz (gelernt an amerikanischen Ziffern) oft wie eine 7 aus –
-// und umgekehrt. Darum wird bei 1 oder 7 zusätzlich der Schreibweg geprüft (strokes = Liste der Striche mit Punkten):
-// 7 = Querstrich in der Mitte oder Anfang oben links mit flachem Strich nach rechts,
-// 1 = steiler Aufstrich, der deutlich unterhalb der Spitze beginnt, oder ein fast senkrechter Strich.
+// Die deutsche 1 mit Aufstrich sieht für das Netz (gelernt an amerikanischen Ziffern) oft wie eine 7 aus – und umgekehrt.
+// In der Klasse wird die 7 immer mit Querstrich geschrieben (Vorgabe der Lehrkraft, 11.10.2026). Darum entscheidet
+// bei 1 oder 7 allein der Querstrich: ein eigener, flacher Strich etwa in der Mitte → 7, sonst → 1.
 function refineOneSeven(r, strokes) {
   if (!r || !strokes || !strokes.length) return r;
   if (r.digit !== 1 && r.digit !== 7 && r.p1 + r.p7 < 0.5) return r;
   const all = strokes.flat();
-  const xs = all.map(p => p.x), ys = all.map(p => p.y);
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-  const h = maxY - minY, w = maxX - minX;
+  const ys = all.map(p => p.y);
+  const minY = Math.min(...ys), h = Math.max(...ys) - minY;
   if (h < 15) return r;
-  const as = (digit) => ({ ...r, digit, conf: Math.max(r.conf, 0.85), checked: true });
   const len = (s) => s.reduce((a, p, i) => (i ? a + Math.hypot(p.x - s[i - 1].x, p.y - s[i - 1].y) : 0), 0);
-  // Querstrich der 7: ein zweiter, flacher Strich etwa in der Mitte
   const main = strokes.reduce((a, s) => (len(s) > len(a) ? s : a), strokes[0]);
   const bar = strokes.some(s => {
     if (s === main || s.length < 2) return false;
     const sx = s.map(p => p.x), sy = s.map(p => p.y);
     const bw = Math.max(...sx) - Math.min(...sx), bh = Math.max(...sy) - Math.min(...sy);
     const cy = (sy.reduce((a, v) => a + v, 0) / sy.length - minY) / h;
-    return bw > 0.2 * h && bh < 0.15 * h && cy > 0.3 && cy < 0.8;
+    return bw > 0.2 * h && bh < 0.5 * bw && cy > 0.25 && cy < 0.85;
   });
-  if (bar) return as(7);
-  // Ecke = Punkt, an dem der erste Strich am weitesten nach rechts oben kommt
-  const first = strokes[0];
-  const start = first[0];
-  const corner = first.reduce((a, p) => (p.x - p.y > a.x - a.y ? p : a), first[0]);
-  const drop = Math.max(0, start.y - corner.y) / h; // wie weit unter der Spitze der Strich beginnt
-  const run = Math.max(0, corner.x - start.x) / h;   // wie weit er nach rechts geht
-  if (run >= 0.3 && drop < 0.4 * run) return as(7);
-  if (drop >= 0.15 && drop >= 0.6 * run) return as(1);
-  if (w < 0.25 * h) return as(1);
-  return r;
+  return { ...r, digit: bar ? 7 : 1, conf: Math.max(r.conf, 0.85), checked: true };
 }
 
 // Ein Schreibfeld für eine Ziffer (Finger, Stift oder Maus).
@@ -1022,7 +1033,7 @@ function WritePad({ label, color, light, dark, onResult, disabled, resetKey, siz
   const up = () => {
     if (!drawing.current) return; drawing.current = false;
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => { const r = refineOneSeven(recognizeDigit(ref.current), strokes.current); setRes(r); onResult && onResult(r); }, 450);
+    timer.current = setTimeout(() => { const r = refineOneSeven(recognizeDigit(ref.current, strokes.current), strokes.current); setRes(r); onResult && onResult(r); }, 450);
   };
   const clear = () => {
     const c = ref.current; c.getContext('2d').clearRect(0, 0, c.width, c.height); strokes.current = []; setRes(null); onResult && onResult(null);
@@ -1750,7 +1761,7 @@ function ImpressumModal({ onClose, section }) {
           <H3>2. Das Wichtigste in Kürze</H3>
           <p>Die App funktioniert ohne Anmeldung und ohne Namen. Sie setzt keine Cookies, speichert nichts im Browser und verwendet keine Analyse-, Werbe- oder Trackingdienste. Sterne gibt es nur für die aktuelle Runde. Es wird kein Spielstand gespeichert. Schriften und Gestaltungsdateien werden direkt mit der App ausgeliefert, es werden keine Verbindungen zu Google oder anderen Drittanbietern aufgebaut.</p>
           <H3>3. Mikrofon, Spracherkennung und Vorlesen</H3>
-          <p>In der Übung „Sprech-Probe“ kann eine Spracherkennung eingeschaltet werden (Testbetrieb). Dafür fragt der Browser nach der Erlaubnis, das Mikrofon zu benutzen. Die Erkennung läuft vollständig auf dem Gerät. Die Sprachaufnahmen werden nur kurz im Arbeitsspeicher ausgewertet, nicht gespeichert und weder an mich noch an Dritte übertragen. Das dafür nötige Sprachmodell (ca. 50 MB) wird von GitHub Pages geladen, wie alle anderen Dateien der App. Auch die Erkennung der mit dem Finger geschriebenen Ziffern läuft nur auf dem Gerät, die Schrift wird nicht gespeichert. Die Zahlen werden mit aufgenommenen Sprachdateien vorgelesen, die mit der App ausgeliefert werden. Wird im Lehrer-Bereich die Stimme des Geräts gewählt, nutzt die App nur die auf dem Gerät installierten Stimmen.</p>
+          <p>In der Übung „Sprech-Probe“ ist eine Spracherkennung eingeschaltet (Testbetrieb); die Lehrkraft kann sie im Lehrer-Bereich ausschalten. Dafür fragt der Browser nach der Erlaubnis, das Mikrofon zu benutzen. Die Erkennung läuft vollständig auf dem Gerät. Die Sprachaufnahmen werden nur kurz im Arbeitsspeicher ausgewertet, nicht gespeichert und weder an mich noch an Dritte übertragen. Das dafür nötige Sprachmodell (ca. 50 MB) wird von GitHub Pages geladen, wie alle anderen Dateien der App. Auch die Erkennung der mit dem Finger geschriebenen Ziffern läuft nur auf dem Gerät, die Schrift wird nicht gespeichert. Die Zahlen werden mit aufgenommenen Sprachdateien vorgelesen, die mit der App ausgeliefert werden. Wird im Lehrer-Bereich die Stimme des Geräts gewählt, nutzt die App nur die auf dem Gerät installierten Stimmen.</p>
           <H3>4. Bereitstellung über GitHub Pages</H3>
           <p>Die App wird über GitHub Pages bereitgestellt, einen Dienst der GitHub Inc., 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, USA. Beim Aufruf der App verarbeitet GitHub technisch notwendige Daten, insbesondere die IP-Adresse, Datum und Uhrzeit des Abrufs sowie Angaben zum verwendeten Browser. Dies ist erforderlich, um die Seite auszuliefern und ihre Sicherheit zu gewährleisten. Dabei können Daten in die USA übermittelt werden. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO. Mein berechtigtes Interesse liegt in einer sicheren und zuverlässigen Bereitstellung der App. Ich selbst erhalte keine Zugriffsdaten und werte keine aus. Weitere Informationen: Datenschutzerklärung von GitHub (<a href={GITHUB_PRIVACY_URL} target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline underline-offset-2 hover:text-cyan-200 break-all">{GITHUB_PRIVACY_URL}</a>).</p>
           <H3>5. Deine Rechte</H3>
