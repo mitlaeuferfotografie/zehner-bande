@@ -976,14 +976,79 @@ function recognizeDigit(canvas, strokes) {
   const mxo = Math.max(...out); const ex = out.map(v => Math.exp(v - mxo)); const tot = ex.reduce((a, b) => a + b, 0);
   const probs = ex.map(v => v / tot);
   const digit = probs.indexOf(Math.max(...probs));
-  return { digit, conf: probs[digit], aspect: dh / dw, p1: probs[1], p7: probs[7] };
+  return { digit, conf: probs[digit], aspect: dh / dw, p1: probs[1], p7: probs[7], probs };
+}
+
+// Geschlossene Schleifen zählen (Löcher im Schriftbild). Eine 3 oder 5 hat keine Schleife, eine 8 zwei, eine 9 oben
+// eine, eine 6 unten eine. Gezeichnet wird mit etwas dickerem Strich, damit kleine Lücken in der Schleife zugehen.
+// Winzige Löcher (z. B. ein Kringel in der Mitte der 3) zählen nicht.
+function findLoops(strokes) {
+  const pts = strokes.flat(); if (pts.length < 3) return [];
+  const xs = pts.map(q => q.x), ys = pts.map(q => q.y);
+  const minX = Math.min(...xs), minY = Math.min(...ys);
+  const bw = Math.max(...xs) - minX, bh = Math.max(...ys) - minY;
+  if (Math.max(bw, bh) < 15) return [];
+  const N = 56, LW = 6.5, sc = (N - 12) / Math.max(bw, bh, 1);
+  const c = document.createElement('canvas'); c.width = N; c.height = N;
+  const cx = c.getContext('2d'); cx.lineWidth = LW; cx.lineCap = 'round'; cx.lineJoin = 'round'; cx.strokeStyle = '#000';
+  const ox = (N - bw * sc) / 2, oy = (N - bh * sc) / 2;
+  for (const st of strokes) {
+    if (st.length < 2) continue;
+    cx.beginPath(); cx.moveTo(ox + (st[0].x - minX) * sc, oy + (st[0].y - minY) * sc);
+    for (const q of st) cx.lineTo(ox + (q.x - minX) * sc, oy + (q.y - minY) * sc);
+    cx.stroke();
+  }
+  const d = cx.getImageData(0, 0, N, N).data;
+  const ink = new Uint8Array(N * N); for (let i = 0; i < N * N; i++) ink[i] = d[i * 4 + 3] > 100 ? 1 : 0;
+  const seen = new Uint8Array(N * N); const loops = [];
+  const minArea = 0.035 * (bw * sc) * (bh * sc);
+  for (let i = 0; i < N * N; i++) {
+    if (ink[i] || seen[i]) continue;
+    const stack = [i]; seen[i] = 1; let area = 0, sy = 0, top = N, bot = 0, edge = false;
+    while (stack.length) {
+      const k = stack.pop(); const x = k % N, y = (k - x) / N; area++; sy += y; if (y < top) top = y; if (y > bot) bot = y;
+      if (x === 0 || y === 0 || x === N - 1 || y === N - 1) edge = true;
+      for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+        if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+        const nk = ny * N + nx; if (!ink[nk] && !seen[nk]) { seen[nk] = 1; stack.push(nk); }
+      }
+    }
+    // cy, top, bot: Lage der Schleife, 0 = oben, 1 = unten
+    const rel = (v) => (v - oy) / (bh * sc);
+    if (!edge && area >= minArea) loops.push({ area, cy: rel(sy / area), top: rel(top), bot: rel(bot) });
+  }
+  return loops;
+}
+
+// Liest das Netz eine 3 oder 5, obwohl das Kind eine Schleife geschlossen hat, war es eine 8, 9 oder 6.
+// Liest es eine 0, die Schleife sitzt aber nur unten (bzw. nur oben), war es eine 6 (bzw. 9).
+// (Rückmeldung der Lehrkraft, 11.10.2026: 8 und 9 wurden manchmal als 3 gelesen, 6 als 0.)
+function refineLoops(r, strokes) {
+  if (!r || !r.probs || !strokes || ![0, 1, 3, 5, 7].includes(r.digit)) return r;
+  const loops = findLoops(strokes);
+  if (!loops.length) return r;
+  const P = r.probs; const best = (list) => list.reduce((a, b) => (P[b] > P[a] ? b : a));
+  const L = loops[0];
+  let digit = null;
+  if (r.digit === 1 || r.digit === 7) {
+    if (loops.length >= 2) digit = 8;
+    else if (L.cy < 0.5) digit = 9;                         // schmale 9: Schleife oben
+  } else if (r.digit === 0) {
+    if (loops.length === 1 && L.top > 0.3) digit = 6;       // Bogen oben, Schleife unten
+    else if (loops.length === 1 && L.bot < 0.7) digit = 9; // Schleife oben, Strich unten
+  } else if (loops.length >= 2) digit = 8;
+  else if (L.cy < 0.45) digit = best([9, 8]);
+  else if (L.cy > 0.55) digit = r.digit === 5 ? 6 : best([6, 8]); // eine 5 mit geschlossenem Bauch ist eine 6
+  else if (r.digit === 3) digit = best([8, 0]);
+  if (digit === null) return r;
+  return { ...r, digit, conf: Math.max(r.conf, 0.85), loops: loops.length };
 }
 
 // Die deutsche 1 mit Aufstrich sieht für das Netz (gelernt an amerikanischen Ziffern) oft wie eine 7 aus – und umgekehrt.
 // In der Klasse wird die 7 immer mit Querstrich geschrieben (Vorgabe der Lehrkraft, 11.10.2026). Darum entscheidet
 // bei 1 oder 7 allein der Querstrich: ein eigener, flacher Strich etwa in der Mitte → 7, sonst → 1.
 function refineOneSeven(r, strokes) {
-  if (!r || !strokes || !strokes.length) return r;
+  if (!r || !strokes || !strokes.length || r.loops) return r; // mit Schleife ist es keine 1 oder 7
   if (r.digit !== 1 && r.digit !== 7 && r.p1 + r.p7 < 0.5) return r;
   const all = strokes.flat();
   const ys = all.map(p => p.y);
@@ -1009,7 +1074,8 @@ function WritePad({ label, color, light, dark, onResult, disabled, resetKey, siz
   const drawing = useRef(false);
   const last = useRef(null);
   const timer = useRef(null);
-  const strokes = useRef([]); // Schreibweg (für die Unterscheidung 1/7)
+  const strokes = useRef([]); // Schreibweg (für die Erkennung)
+  const { testInfo } = useSettings() || {};
   const [res, setRes] = useState(null);
   const SIZE = size;
   const W = Math.round(size * 0.8), H = Math.round(size * 1.25); // schmaler als hoch: Ziffern rücken zusammen
@@ -1033,7 +1099,7 @@ function WritePad({ label, color, light, dark, onResult, disabled, resetKey, siz
   const up = () => {
     if (!drawing.current) return; drawing.current = false;
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => { const r = refineOneSeven(recognizeDigit(ref.current, strokes.current), strokes.current); setRes(r); onResult && onResult(r); }, 450);
+    timer.current = setTimeout(() => { const r = refineOneSeven(refineLoops(recognizeDigit(ref.current, strokes.current), strokes.current), strokes.current); setRes(r); onResult && onResult(r); }, 450);
   };
   const clear = () => {
     const c = ref.current; c.getContext('2d').clearRect(0, 0, c.width, c.height); strokes.current = []; setRes(null); onResult && onResult(null);
@@ -1062,6 +1128,12 @@ function WritePad({ label, color, light, dark, onResult, disabled, resetKey, siz
       <div className="min-h-[2.5rem] text-sm leading-tight font-bold text-center" style={{ color: unsure ? '#c2410c' : dark, width: W }}>
         {res ? (unsure ? 'Nicht lesbar – schreib nochmal' : <>Ich lese: <span className="text-lg">{res.digit}</span></>) : <span className="text-slate-400">{hint}</span>}
       </div>
+      {testInfo && res && res.probs && (
+        <div className="text-[10px] leading-tight text-slate-400 text-center" style={{ width: W }}>
+          Test: {res.probs.map((v, d) => [d, v]).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([d, v]) => `${d}: ${Math.round(v * 100)} %`).join(' · ')}
+          {res.loops ? ` · Schleifen ${res.loops}` : ''}{res.checked ? ' · 1/7-Regel' : ''}
+        </div>
+      )}
       {!disabled && <button onClick={clear} aria-label="Wegradieren" title="Wegradieren" className="w-14 h-11 rounded-xl bg-pink-100 border-2 border-pink-300 text-pink-600 hover:bg-pink-200 active:translate-y-0.5 inline-flex items-center justify-center shadow-[0_3px_0_#f9a8d4] active:shadow-none"><Eraser className="w-7 h-7" /></button>}
     </div>
   );
@@ -1831,7 +1903,7 @@ function AdminControlModal({ onClose, settings, setSettings, voices, onOpenSheet
           ) : <p className="text-amber-300 text-sm">Auf diesem Gerät gibt es keine deutsche Offline-Stimme. Ohne Stimme zeigen die Hör-Übungen das Zahlwort zum Lesen.</p>)}
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={settings.audioOn} onChange={ev => setSettings(s => ({ ...s, audioOn: ev.target.checked }))} /> Vorlesen eingeschaltet</label>
           <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={settings.speechOn} onChange={ev => setSettings(s => ({ ...s, speechOn: ev.target.checked }))} /> <span>Spracherkennung in der Sprech-Probe <span className="bg-amber-500 text-slate-950 text-xs font-black px-1.5 rounded">TEST</span><br /><span className="text-xs text-slate-400">Standardmäßig an. Läuft auf dem Gerät, die Stimme wird nicht übertragen. Lädt beim ersten Mal ca. 50 MB. Braucht die Mikrofon-Freigabe.</span></span></label>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={settings.testInfo} onChange={ev => setSettings(s => ({ ...s, testInfo: ev.target.checked }))} /> Test-Info anzeigen (was die Erkennung gehört hat)</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={settings.testInfo} onChange={ev => setSettings(s => ({ ...s, testInfo: ev.target.checked }))} /> Test-Info anzeigen (was die Sprach- und Schrifterkennung erkannt hat)</label>
           <p className="text-xs text-slate-500">Einstellungen gelten, bis die Seite neu geladen wird. Dauerhaft für die Klasse: diesen Link (oder QR-Code) verwenden:</p>
           <div className="flex gap-2 items-center"><code className="flex-1 text-xs bg-slate-950 p-2 rounded-lg break-all">{link}</code><button onClick={() => { navigator.clipboard && navigator.clipboard.writeText(link).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1500); }} className="bg-slate-700 rounded-lg p-2">{copied ? <Check className="w-4 h-4 text-lime-400" /> : <Copy className="w-4 h-4" />}</button></div>
         </div>

@@ -48,7 +48,10 @@ jobs:
             const fs = require('fs');
             let h = fs.readFileSync('public/index.html', 'utf8');
             h = h.replace(/<script type=\"module\"[^>]*><\/script>/, '');
-            h = h.replace('</body>', '  <script src=\"bundle.js\"></script>\n  </body>');
+            // Versionsnummer an die Dateien hängen: So holt jeder Browser nach einem Update die neue Fassung
+            const v = (process.env.GITHUB_SHA || String(Date.now())).slice(0, 8);
+            h = h.replace('href=\"tailwind.css\"', 'href=\"tailwind.css?v=' + v + '\"');
+            h = h.replace('</body>', '  <script src=\"bundle.js?v=' + v + '\"></script>\n  </body>');
             fs.writeFileSync('_site/index.html', h);
           "
           touch _site/.nojekyll

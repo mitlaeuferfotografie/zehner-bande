@@ -24,7 +24,7 @@ Lern-App für Zahlen bis 100 (Klasse 2), angelehnt an die *Idee* des Blitzrechne
 
 ## Technik
 - React 18, **eine Datei** `src/App.jsx` (ca. 2.300 Zeilen), Icons `lucide-react@^0.577.0`, Tailwind CSS v3 beim Bauen erzeugt. Schriften Fredoka und Bangers lokal in `public/fonts/`.
-- Bauen und Veröffentlichen: `.github/workflows/pages.yml` (esbuild + Tailwind CLI). Er kopiert `public/fonts`, `public/vosk` und `public/audio` nach `_site`. Nach dem Push ist die Seite in ca. 2 Minuten live (`gh run watch`).
+- Bauen und Veröffentlichen: `.github/workflows/pages.yml` (esbuild + Tailwind CLI, hängt `?v=<Commit>` an `bundle.js` und `tailwind.css`, damit Browser nach Updates nicht die alte Fassung zeigen). Er kopiert `public/fonts`, `public/vosk` und `public/audio` nach `_site`. Nach dem Push ist die Seite in ca. 2 Minuten live (`gh run watch`).
 - **Lokal bauen und testen** (gleiche Befehle wie in `pages.yml`, Schritt „App bauen“):
   ```
   mkdir build _site && cp -r src build/src && cd build && npm init -y
@@ -81,7 +81,7 @@ Die Lehrkraft möchte später ihre eigene Stimme verwenden. Vorgehen: Sie nimmt 
 - **Impressum/Datenschutz** am 09.10.2026 mit Freigabe aktualisiert: Banden-Code-Satz ersetzt („Sterne nur für die aktuelle Runde“), neuer Abschnitt 3 „Mikrofon, Spracherkennung und Vorlesen“, Lizenzzeilen (vosk-browser/Vosk-Modell Apache 2.0, Piper MIT, Thorsten-Voice CC0, M-AILABS-Lizenz, MNIST CC BY-SA 3.0 mit Urhebern), Stand Oktober 2026. Ändert sich an Mikrofon, Stimmen oder Speicherung etwas, muss dieser Text mit (nur nach Freigabe).
 - **Übungspass** (Papier zum Ausmalen nach jeder Runde) als Ersatz für das Speichern: von der Lehrkraft gewünscht, noch nicht gebaut.
 - Spracherkennung mit Kindern testen. Die Lehrkraft meldet die Test-Info-Zeilen, damit lässt sich `MIN_CONF` einstellen.
-- Handschrift (11.10.2026): `recognizeDigit(canvas, strokes)` zeichnet die Ziffer aus dem Schreibweg neu, immer mit gleich dünnem Strich (`DIGIT_LW`). Vorher liefen bei klein geschriebenen Ziffern die Schleifen zu (6→5, 8→3, 9→3). Test mit 1.800 simulierten Ziffern: vorher 1.731, jetzt 1.795 richtig. **1/7:** Die 7 wird in der Klasse immer mit Querstrich geschrieben, darum entscheidet `refineOneSeven` nur nach dem Querstrich (mit → 7, ohne → 1). **Mit echten Kinderschriften auf dem iPad noch testen.**
+- Handschrift (11.10.2026): `recognizeDigit(canvas, strokes)` zeichnet die Ziffer aus dem Schreibweg neu, immer mit gleich dünnem Strich (`DIGIT_LW`). Vorher liefen bei klein geschriebenen Ziffern die Schleifen zu (6→5, 8→3, 9→3). Test mit 1.800 simulierten Ziffern: vorher 1.731, jetzt 1.795 richtig. **1/7:** Die 7 wird in der Klasse immer mit Querstrich geschrieben, darum entscheidet `refineOneSeven` nur nach dem Querstrich (mit → 7, ohne → 1). **Schleifen-Prüfung** (`findLoops`, `refineLoops`): Liest das Netz 3 oder 5, obwohl eine Schleife geschlossen ist → 8/9/6; liest es 0, aber die Schleife sitzt nur unten/oben → 6/9; liest es 1/7 mit Schleife oben → 9. Test (je 300 krakelige Ziffern): 6 von 188 auf 277 richtig (vorher oft 0 oder 5), 8 als 3 verschwunden, 0/3/5 unverändert. Mit Test-Info (Lehrer-Bereich) zeigt jedes Schreibfeld die drei wahrscheinlichsten Ziffern. **Mit echten Kinderschriften auf dem iPad noch testen.**
 - Eintrag der App in `Anweisung_Cowork_Lern-Apps_Allgemein.md` (Tabelle „Die Apps“) und neue Aufgabentypen in `Baukasten_Aufgabentypen.md` stehen noch aus.
 - Auf echten iPads testen: Ziehen, Fingerschreiben, Ton, Mikrofon, Ladezeit (ca. 50 MB bei eingeschalteter Spracherkennung).
 
