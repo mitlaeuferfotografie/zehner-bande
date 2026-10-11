@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, createContext, useContext } from 'react';
-import { Star, ArrowRight, RotateCcw, BookOpen, Zap, Lock, Settings, Copy, Check, Eye, Grid3x3, Blocks, PenLine, Ear, Headphones, Puzzle, Mic, Volume2, Printer, Delete, Shuffle, X, Users, Lightbulb } from 'lucide-react';
+import { Star, ArrowRight, RotateCcw, BookOpen, Zap, Lock, Settings, Copy, Check, Eye, Grid3x3, Blocks, PenLine, Ear, Headphones, Puzzle, Mic, Volume2, Printer, Delete, Eraser, Shuffle, X, Users, Lightbulb } from 'lucide-react';
 
 // ==========================================
 // DIE ZEHNER-BANDE – Zahlen bis 100 (Klasse 2)
@@ -1062,7 +1062,7 @@ function WritePad({ label, color, light, dark, onResult, disabled, resetKey, siz
       <div className="min-h-[2.5rem] text-sm leading-tight font-bold text-center" style={{ color: unsure ? '#c2410c' : dark, width: W }}>
         {res ? (unsure ? 'Nicht lesbar – schreib nochmal' : <>Ich lese: <span className="text-lg">{res.digit}</span></>) : <span className="text-slate-400">{hint}</span>}
       </div>
-      {!disabled && <button onClick={clear} className="text-xs font-bold px-3 py-1 rounded-full bg-slate-200 text-slate-600 inline-flex items-center gap-1"><Delete className="w-3.5 h-3.5" /> Wegwischen</button>}
+      {!disabled && <button onClick={clear} aria-label="Wegradieren" title="Wegradieren" className="w-14 h-11 rounded-xl bg-pink-100 border-2 border-pink-300 text-pink-600 hover:bg-pink-200 active:translate-y-0.5 inline-flex items-center justify-center shadow-[0_3px_0_#f9a8d4] active:shadow-none"><Eraser className="w-7 h-7" /></button>}
     </div>
   );
 }
