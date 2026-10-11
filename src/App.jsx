@@ -29,6 +29,18 @@ const appStyles = `
   .anim-hud { animation: hud-pulse 0.6s ease-out; }
   .anim-wiggle { animation: wiggle 2.5s ease-in-out infinite; }
   .anim-bolt { animation: bolt 3.5s ease-in-out infinite; }
+  /* Jubel bei richtiger Antwort */
+  @keyframes cheer-pop { 0% { transform: scale(0); opacity: 0; } 25% { transform: scale(1.25); opacity: 1; } 40% { transform: scale(1); } 75% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.1); opacity: 0; } }
+  @keyframes cheer-burst { 0% { transform: translate(0, 0) scale(.3) rotate(0deg); opacity: 1; } 80% { opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) scale(1) rotate(var(--rot)); opacity: 0; } }
+  @keyframes glow-ok { 0% { box-shadow: 0 0 0 0 rgba(132,204,22,.7); } 100% { box-shadow: 0 0 0 18px rgba(132,204,22,0); } }
+  @keyframes listen { 0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(99,102,241,.35); } 50% { transform: scale(1.06); box-shadow: 0 0 0 14px rgba(99,102,241,0); } }
+  @keyframes stripes { from { background-position: 0 0; } to { background-position: 28px 0; } }
+  .cheer-check { animation: cheer-pop 1.3s ease-out forwards; }
+  .cheer-star { position: absolute; left: 50%; top: 50%; animation: cheer-burst 1.1s cubic-bezier(.2,.7,.3,1) forwards; }
+  .anim-glow-ok { animation: pop-in 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards, glow-ok 0.9s ease-out 0.2s 2; }
+  .anim-listen { animation: listen 1.6s ease-in-out infinite; }
+  .load-stripes { background-image: linear-gradient(45deg, rgba(255,255,255,.3) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.3) 50%, rgba(255,255,255,.3) 75%, transparent 75%); background-size: 28px 28px; animation: stripes .8s linear infinite; }
+  @media (prefers-reduced-motion: reduce) { .cheer-star { display: none; } .anim-listen, .load-stripes { animation: none; } }
   .blitz-flash { position: fixed; inset: 0; background: #fef08a; pointer-events: none; z-index: 300; animation: flash .35s ease-out forwards; }
 
   body { font-family: 'Fredoka', sans-serif; }
@@ -478,11 +490,38 @@ function GameHead({ icon: Icon, title, children }) {
   );
 }
 
+// Jubel bei richtiger Antwort: großer Haken in der Bildschirmmitte und Sterne in den Stellenwert-Farben (ca. 1 Sekunde).
+// Liegt über allem, fängt aber keine Fingertipps ab.
+const CHEER_COLORS = ['#16a34a', '#2563eb', '#dc2626', '#facc15', '#7c3aed'];
+function Cheer() {
+  const [stars] = useState(() => Array.from({ length: 18 }, (_, i) => {
+    const a = (i / 18) * 2 * Math.PI + Math.random() * 0.3; const d = 130 + Math.random() * 110;
+    return { dx: Math.cos(a) * d, dy: Math.sin(a) * d, rot: Math.round(Math.random() * 360 - 180), size: 18 + Math.round(Math.random() * 16), color: CHEER_COLORS[i % CHEER_COLORS.length], delay: Math.random() * 0.12 };
+  }));
+  const [show, setShow] = useState(true);
+  useEffect(() => { const t = setTimeout(() => setShow(false), 1400); return () => clearTimeout(t); }, []);
+  if (!show) return null;
+  return (
+    <div className="fixed inset-0 z-[250] pointer-events-none flex items-center justify-center" aria-hidden="true">
+      <div className="relative">
+        {stars.map((st, i) => (
+          <Star key={i} className="cheer-star" fill={st.color} color={st.color}
+            style={{ width: st.size, height: st.size, marginLeft: -st.size / 2, marginTop: -st.size / 2, '--dx': `${st.dx}px`, '--dy': `${st.dy}px`, '--rot': `${st.rot}deg`, animationDelay: `${st.delay}s` }} />
+        ))}
+        <div className="cheer-check w-36 h-36 rounded-full bg-lime-500 border-8 border-white shadow-2xl flex items-center justify-center">
+          <Check className="w-24 h-24 text-white" strokeWidth={4} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FeedbackBox({ ok, children, onNext, nextLabel = 'Weiter' }) {
   const [praise] = useState(randomPraise);
   return (
-    <div className={`w-full max-w-xl mx-auto mt-4 rounded-3xl border-4 p-4 md:p-5 text-center anim-pop ${ok ? 'bg-lime-50 border-lime-500' : 'bg-amber-50 border-amber-500'}`}>
-      <div className={`text-2xl font-black mb-2 ${ok ? 'text-lime-700' : 'text-amber-700'}`}>{ok ? praise : 'Noch nicht ganz.'}</div>
+    <div className={`w-full max-w-xl mx-auto mt-4 rounded-3xl border-4 p-4 md:p-5 text-center ${ok ? 'bg-lime-50 border-lime-500 anim-glow-ok' : 'bg-amber-50 border-amber-500 anim-pop'}`}>
+      {ok && <Cheer />}
+      <div className={`font-black mb-2 ${ok ? 'text-3xl text-lime-700 flex items-center justify-center gap-2' : 'text-2xl text-amber-700'}`}>{ok && <Check className="w-8 h-8" strokeWidth={4} />}{ok ? praise : 'Noch nicht ganz.'}</div>
       <div className="text-slate-700">{children}</div>
       {onNext && <button onClick={onNext} className="mt-4 bg-indigo-600 hover:bg-indigo-500 text-white font-black py-3 px-10 rounded-xl text-xl inline-flex items-center gap-2 active:scale-95">{nextLabel} <ArrowRight className="w-5 h-5" /></button>}
     </div>
@@ -1451,14 +1490,36 @@ function ZahlwortGame({ onFinish, onShowTip }) {
 const VOSK_SCRIPT = 'vosk/vosk.js';
 // Das Modell (ca. 46 MB) liegt in zwei Teilen auf dem Server und wird im Browser wieder zusammengesetzt.
 const VOSK_MODEL_PARTS = ['vosk/vosk-model-small-de-0.15.tar.gz.teil1', 'vosk/vosk-model-small-de-0.15.tar.gz.teil2'];
+const VOSK_TOTAL_BYTES = 46499655; // Größe beider Teile zusammen (falls der Server keine Größe mitschickt)
 let voskModelPromise = null;
+// Ladefortschritt für den Ladebildschirm der Sprech-Probe: phase 'download' (mit Bytes) oder 'init' (Modell wird entpackt)
+let voskProgress = { phase: 'download', loaded: 0, total: VOSK_TOTAL_BYTES };
+const voskProgressSubs = new Set();
+function setVoskProgress(p) { voskProgress = { ...voskProgress, ...p }; voskProgressSubs.forEach(f => f(voskProgress)); }
+// Eine Datei laden und dabei mitzählen, wie viel schon da ist
+function fetchCounting(url, onBytes) {
+  return fetch(url).then((r) => {
+    if (!r.ok) throw new Error('kein Modell');
+    if (!r.body || !r.body.getReader) return r.blob().then((b) => { onBytes(b.size); return b; });
+    const reader = r.body.getReader(); const chunks = []; let got = 0;
+    const pump = () => reader.read().then(({ done, value }) => {
+      if (done) return new Blob(chunks);
+      chunks.push(value); got += value.length; onBytes(got);
+      return pump();
+    });
+    return pump();
+  });
+}
 function loadVoskModel() {
   if (voskModelPromise) return voskModelPromise;
   voskModelPromise = new Promise((resolve, reject) => {
     const go = () => {
       // Erst prüfen, ob das Modell überhaupt auf dem Server liegt (sonst würde das Laden ewig warten)
-      Promise.all(VOSK_MODEL_PARTS.map(u => fetch(u).then((r) => { if (!r.ok) throw new Error('kein Modell'); return r.blob(); })))
+      const got = VOSK_MODEL_PARTS.map(() => 0);
+      setVoskProgress({ phase: 'download', loaded: 0 });
+      Promise.all(VOSK_MODEL_PARTS.map((u, i) => fetchCounting(u, (b) => { got[i] = b; setVoskProgress({ loaded: got[0] + got[1] }); })))
         .then((parts) => {
+          setVoskProgress({ phase: 'init' });
           const url = URL.createObjectURL(new Blob(parts, { type: 'application/gzip' }));
           const m = new window.Vosk.Model(url);
           m.on('load', (msg) => (msg.result ? resolve(m) : reject(new Error('load'))));
@@ -1513,6 +1574,8 @@ const PREROLL_SECONDS = 1.0;
 function useNumberListener(enabled) {
   const [state, setState] = useState(enabled ? 'loading' : 'off'); // off | loading | ready | listening | error
   const [error, setError] = useState('');
+  const [progress, setProgress] = useState(voskProgress);
+  useEffect(() => { voskProgressSubs.add(setProgress); return () => { voskProgressSubs.delete(setProgress); }; }, []);
   const model = useRef(null);
   const audio = useRef(null); // { ctx, stream, node, ring, rate }
   const active = useRef(null); // laufende Erkennung
@@ -1604,12 +1667,33 @@ function useNumberListener(enabled) {
       resolve(null);
     });
   }), [openAudio]);
-  return { state, error, listen };
+  return { state, error, listen, progress };
 }
 
 // ==========================================
 // ÜBUNG 8: SPRECH-PROBE – Zahl laut sprechen; Selbstkontrolle oder (Test) Spracherkennung
 // ==========================================
+// Ladebildschirm: Solange das Sprachmodell lädt, sehen die Kinder noch keine Aufgabe, sondern einen Fortschrittsbalken.
+function SpeechLoading({ progress, onSkip }) {
+  const p = progress || { phase: 'download', loaded: 0, total: 1 };
+  const pct = p.phase === 'init' ? 100 : Math.min(99, Math.round((p.loaded / p.total) * 100));
+  return (
+    <div className="max-w-md mx-auto mt-2 mb-4 bg-white border-4 border-indigo-200 rounded-3xl p-6 text-center anim-pop" role="status" aria-live="polite">
+      <div className="mx-auto w-24 h-24 rounded-full bg-indigo-100 flex items-center justify-center mb-4 anim-listen">
+        <Mic className="w-12 h-12 text-indigo-600" />
+      </div>
+      <p className="text-2xl font-black text-indigo-950">Einen Moment, bitte!</p>
+      <p className="text-slate-600 mt-1">{p.phase === 'init' ? 'Fast fertig …' : 'Die Zehner-Bande spitzt die Ohren …'}</p>
+      <div className="mt-4 h-6 rounded-full bg-indigo-100 overflow-hidden border-2 border-indigo-200">
+        <div className={`h-full rounded-full bg-indigo-500 transition-all duration-300 ${p.phase === 'init' ? 'load-stripes' : ''}`} style={{ width: `${Math.max(4, pct)}%` }} />
+      </div>
+      <p className="mt-1 text-lg font-black text-indigo-700">{pct} %</p>
+      <p className="text-xs text-slate-500 mt-2">Beim ersten Mal dauert das etwas länger. Danach kannst du auf das Mikrofon tippen.</p>
+      <button onClick={onSkip} className="mt-3 text-sm text-slate-500 underline">Ohne Mikrofon spielen</button>
+    </div>
+  );
+}
+
 function SprechenGame({ onFinish }) {
   const { maxN, hasAudio, speechOn, testInfo } = useSettings();
   const speak = useSpeak();
@@ -1649,14 +1733,14 @@ function SprechenGame({ onFinish }) {
       <GameHead icon={Mic} title="Sprech-Probe">{micReady || (useMic && mic.state === 'loading') ? 'Tippe auf das Mikrofon und sag die Zahl laut.' : 'Sag die Zahl laut. Dann kontrollierst du dich selbst.'}</GameHead>
       <RoundDots current={idx} total={ROUND} results={results} />
       {!useMic && <div className="flex items-center justify-center gap-3 text-slate-500 text-sm mb-4"><Users className="w-5 h-5" /> Am besten zu zweit: Ein Kind spricht, das andere hört genau hin.</div>}
-      {useMic && mic.state === 'loading' && <div className="max-w-md mx-auto mb-4 bg-indigo-50 border-2 border-indigo-200 rounded-2xl p-3 text-center text-indigo-900 text-sm font-bold">Die Spracherkennung wird geladen … Beim ersten Mal kann das eine Weile dauern.</div>}
+      {useMic && mic.state === 'loading' && <SpeechLoading progress={mic.progress} onSkip={() => setUseMic(false)} />}
       {useMic && mic.state === 'error' && <div className="max-w-md mx-auto mb-4 bg-amber-50 border-2 border-amber-300 rounded-2xl p-3 text-center text-amber-900 text-sm"><b>{mic.error}</b><br />Du kannst ohne Mikrofon weiterspielen.</div>}
-      <div className="text-center">
+      {!(useMic && mic.state === 'loading') && <div className="text-center">
         <span className="inline-block bg-white border-4 border-indigo-900 rounded-3xl px-10 py-3 text-8xl font-black shadow-[6px_6px_0_rgba(30,27,75,0.25)]"><ColorNumber n={n} /></span>
-      </div>
+      </div>}
 
       {/* Mit Spracherkennung */}
-      {useMic && mic.state !== 'error' && !revealed && rated === null && (
+      {useMic && mic.state !== 'error' && mic.state !== 'loading' && !revealed && rated === null && (
         <div className="text-center mt-6 flex flex-col items-center gap-3">
           <button onClick={talk} disabled={mic.state !== 'ready'} className={`w-28 h-28 rounded-full flex items-center justify-center text-white shadow-xl transition-all active:scale-95 disabled:opacity-60 ${mic.state === 'listening' ? 'bg-rose-600 animate-pulse' : 'bg-indigo-600 hover:bg-indigo-500'}`} aria-label="Sprechen">
             <Mic className="w-14 h-14" />
