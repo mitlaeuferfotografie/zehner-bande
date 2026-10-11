@@ -155,14 +155,16 @@ const useSettings = () => useContext(SettingsContext);
 
 function readUrlSettings() {
   // zrFromLink: Steht der Zahlenraum im Link, entfällt das Auswahlbild beim Start.
-  const out = { maxN: 100, zrFromLink: false, blitzMs: 3000, speechOn: false, voiceChoice: 'thorsten' };
+  const out = { maxN: 100, zrFromLink: false, blitzMs: 3000, speechOn: true, testInfo: false, voiceChoice: 'thorsten' };
   try {
     const p = new URLSearchParams(window.location.search);
     const zr = parseInt(p.get('zr'), 10);
     if ([10, 20, 100].includes(zr)) { out.maxN = zr; out.zrFromLink = true; }
     const b = parseInt(p.get('blitz'), 10);
     if ([0, 1, 2, 3].includes(b)) out.blitzMs = b * 1000;
-    if (p.get('sprache') === '1') out.speechOn = true;
+    // Spracherkennung ist standardmäßig an (Wunsch der Lehrkraft, 11.10.2026); ?sprache=0 schaltet sie aus
+    if (p.get('sprache') === '0') out.speechOn = false;
+    if (p.get('testinfo') === '1') out.testInfo = true;
     if (['thorsten', 'ramona', 'geraet'].includes(p.get('stimme'))) out.voiceChoice = p.get('stimme');
   } catch (e) { /* ohne URL-Parameter */ }
   return out;
@@ -1361,7 +1363,7 @@ function ZahlwortGame({ onFinish, onShowTip }) {
 // ==========================================
 // ==========================================
 // SPRACHERKENNUNG (TEST) – Vosk läuft im Browser, das Sprachmodell wird mit der App ausgeliefert.
-// Die Stimme verlässt das Gerät nicht. Nur aktiv, wenn im Lehrer-Bereich eingeschaltet (oder ?sprache=1).
+// Die Stimme verlässt das Gerät nicht. Standardmäßig an; im Lehrer-Bereich oder mit ?sprache=0 ausschaltbar.
 // ==========================================
 const VOSK_SCRIPT = 'vosk/vosk.js';
 // Das Modell (ca. 46 MB) liegt in zwei Teilen auf dem Server und wird im Browser wieder zusammengesetzt.
@@ -1526,7 +1528,7 @@ function useNumberListener(enabled) {
 // ÜBUNG 8: SPRECH-PROBE – Zahl laut sprechen; Selbstkontrolle oder (Test) Spracherkennung
 // ==========================================
 function SprechenGame({ onFinish }) {
-  const { maxN, hasAudio, speechOn } = useSettings();
+  const { maxN, hasAudio, speechOn, testInfo } = useSettings();
   const speak = useSpeak();
   const [tasks] = useState(() => {
     if (maxN <= 10) return practiceNumbers(ROUND, maxN);
@@ -1583,7 +1585,7 @@ function SprechenGame({ onFinish }) {
               {heard.num && isDreher(heard.num, n) && <p className="text-sm mt-1">Achtung, Zahlendreher? Zuerst sagst du die Einer!</p>}
             </div>
           )}
-          {heard && <p className="text-xs text-slate-400">Test-Info: gehört „{heard.text || '–'}“ · Sicherheit {Math.round((heard.conf || 0) * 100)} %{heard.raw !== null && heard.num === null ? ' (zu unsicher)' : ''}</p>}
+          {heard && testInfo && <p className="text-xs text-slate-400">Test-Info: gehört „{heard.text || '–'}“ · Sicherheit {Math.round((heard.conf || 0) * 100)} %{heard.raw !== null && heard.num === null ? ' (zu unsicher)' : ''}</p>}
           <button onClick={() => setUseMic(false)} className="text-sm text-slate-500 underline">Ohne Mikrofon weiter</button>
         </div>
       )}
@@ -1610,7 +1612,7 @@ function SprechenGame({ onFinish }) {
       {rated !== null && (
         <FeedbackBox ok={rated} onNext={goNext}>
           {rated && heard && heard.num === n && <p className="mb-2">Ich habe <b>{zahlwort(n)}</b> gehört. 🎤</p>}
-          {heard && <p className="text-xs text-slate-400 mb-1">Test-Info: gehört „{heard.text || '–'}“ · Sicherheit {Math.round((heard.conf || 0) * 100)} %</p>}
+          {heard && testInfo && <p className="text-xs text-slate-400 mb-1">Test-Info: gehört „{heard.text || '–'}“ · Sicherheit {Math.round((heard.conf || 0) * 100)} %</p>}
           {!rated && <p className="mb-2">Sprich es noch einmal langsam nach: <b>{zahlwort(n)}</b>.</p>}
           <ZEExplain n={n} word={false} />
         </FeedbackBox>
@@ -1785,7 +1787,7 @@ function AdminControlModal({ onClose, settings, setSettings, voices, onOpenSheet
     speakWithDevice(v, 'siebenundvierzig');
   };
   const link = (() => {
-    try { const url = new URL(window.location.href); url.search = `?zr=${settings.maxN}&blitz=${settings.blitzMs / 1000}${settings.voiceChoice !== 'thorsten' ? `&stimme=${settings.voiceChoice}` : ''}${settings.speechOn ? '&sprache=1' : ''}`; url.hash = ''; return url.toString(); } catch (e) { return ''; }
+    try { const url = new URL(window.location.href); url.search = `?zr=${settings.maxN}&blitz=${settings.blitzMs / 1000}${settings.voiceChoice !== 'thorsten' ? `&stimme=${settings.voiceChoice}` : ''}${settings.speechOn ? '' : '&sprache=0'}${settings.testInfo ? '&testinfo=1' : ''}`; url.hash = ''; return url.toString(); } catch (e) { return ''; }
   })();
   const Seg = ({ value, options, onChange }) => (
     <div className="flex bg-slate-950 rounded-xl p-1 gap-1">
@@ -1817,7 +1819,8 @@ function AdminControlModal({ onClose, settings, setSettings, voices, onOpenSheet
             </select>
           ) : <p className="text-amber-300 text-sm">Auf diesem Gerät gibt es keine deutsche Offline-Stimme. Ohne Stimme zeigen die Hör-Übungen das Zahlwort zum Lesen.</p>)}
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={settings.audioOn} onChange={ev => setSettings(s => ({ ...s, audioOn: ev.target.checked }))} /> Vorlesen eingeschaltet</label>
-          <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={settings.speechOn} onChange={ev => setSettings(s => ({ ...s, speechOn: ev.target.checked }))} /> <span>Spracherkennung in der Sprech-Probe <span className="bg-amber-500 text-slate-950 text-xs font-black px-1.5 rounded">TEST</span><br /><span className="text-xs text-slate-400">Läuft auf dem Gerät, die Stimme wird nicht übertragen. Lädt beim ersten Mal ca. 50 MB. Braucht die Mikrofon-Freigabe.</span></span></label>
+          <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={settings.speechOn} onChange={ev => setSettings(s => ({ ...s, speechOn: ev.target.checked }))} /> <span>Spracherkennung in der Sprech-Probe <span className="bg-amber-500 text-slate-950 text-xs font-black px-1.5 rounded">TEST</span><br /><span className="text-xs text-slate-400">Standardmäßig an. Läuft auf dem Gerät, die Stimme wird nicht übertragen. Lädt beim ersten Mal ca. 50 MB. Braucht die Mikrofon-Freigabe.</span></span></label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={settings.testInfo} onChange={ev => setSettings(s => ({ ...s, testInfo: ev.target.checked }))} /> Test-Info anzeigen (was die Erkennung gehört hat)</label>
           <p className="text-xs text-slate-500">Einstellungen gelten, bis die Seite neu geladen wird. Dauerhaft für die Klasse: diesen Link (oder QR-Code) verwenden:</p>
           <div className="flex gap-2 items-center"><code className="flex-1 text-xs bg-slate-950 p-2 rounded-lg break-all">{link}</code><button onClick={() => { navigator.clipboard && navigator.clipboard.writeText(link).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1500); }} className="bg-slate-700 rounded-lg p-2">{copied ? <Check className="w-4 h-4 text-lime-400" /> : <Copy className="w-4 h-4" />}</button></div>
         </div>

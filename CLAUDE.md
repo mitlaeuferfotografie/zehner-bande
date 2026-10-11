@@ -8,7 +8,7 @@ Du arbeitest für eine Grundschullehrkraft in NRW (Musik und Deutsch, unterricht
 ## Was die App ist
 Lern-App für Zahlen bis 100 (Klasse 2), angelehnt an die *Idee* des Blitzrechnens: kurze, tägliche Übungen zu Grundvorstellungen. Inhalte und Gestaltung sind eigene, nichts von Klett übernehmen und den Namen „Blitzrechnen“ nicht verwenden. Figuren: **Zacki Zehner** (blaue Zehnerstange) und **Emil Einer** (grüner Einerwürfel, gibt die Tipps).
 
-- Live: https://mitlaeuferfotografie.github.io/zehner-bande/ (mit Spracherkennung: `?sprache=1`)
+- Live: https://mitlaeuferfotografie.github.io/zehner-bande/ (Spracherkennung in der Sprech-Probe standardmäßig an, ausschalten: `?sprache=0`)
 - Repo: https://github.com/mitlaeuferfotografie/zehner-bande, Branch `main`. **Das Repo ist der maßgebliche Stand.**
 - Lokaler Ordner der Lehrkraft: `C:\Users\BrandschP\Documents\ClaudeArbeitsordner\Matheunterricht\Zehner-Bande App\` mit Sicherungen (`ZehnerBande TT_MM_JJ.txt`), Unterlagen und `Anweisung_Cowork_Zehner-Bande.md` (ausführliche fachliche Beschreibung, gern lesen). Der Ordner kann hinter dem Repo zurückliegen.
 - Schwester-Apps (gleiche Technik, gleiches Belohnungsschema): `redezeichen-helden`, `verben_expedition`, `pronomen-magie`, `AdjektiveDetektiv`, `MatheAgent`. Gemeinsame Regeln: `…\ClaudeArbeitsordner\Deutschunterricht\Anweisung_Cowork_Lern-Apps_Allgemein.md`.
@@ -41,7 +41,7 @@ Lern-App für Zahlen bis 100 (Klasse 2), angelehnt an die *Idee* des Blitzrechne
 | Farben (Dienes: **Einer grün, Zehner blau, Hunderter rot**, Lösungen violett) | `const COL` |
 | Zahlwörter, Bausteine, Zahlendreher | `zahlwort`, `zahlwortParts`, `zahlwortDistractors`, `isDreher` |
 | Zufallszahlen | `pickNumbers`, `practiceNumbers` (ca. 80 % Zahlen mit möglichem Zahlendreher; bis 10: 1–10) |
-| Einstellungen und Link-Parameter | `readUrlSettings` (`?zr=10/20/100` → `zrFromLink`, `?blitz=0–3`, `?stimme=thorsten/ramona/geraet`, `?sprache=1`) |
+| Einstellungen und Link-Parameter | `readUrlSettings` (`?zr=10/20/100` → `zrFromLink`, `?blitz=0–3`, `?stimme=thorsten/ramona/geraet`, `?sprache=0` schaltet die Spracherkennung aus, `?testinfo=1` zeigt die Test-Info) |
 | Zahlenraum | `ZAHLENRAEUME`, `GAMES_BIS_10`, `gameAllowed`, Startbild `gameState === 'zahlenraum'`, `chooseZahlenraum` |
 | Zahlen-Ansage | `FILE_VOICES`, `playNumber`, `useSpeak` (MP3 aus `public/audio/<stimme>/<n>.mp3`, sonst Gerätestimme) |
 | Darstellungen | `HundredField` (5er-Lücke), `TensOnes` (Dienes inkl. Hunderterplatte), `ColorNumber`, `ZEExplain` |
@@ -71,7 +71,7 @@ Lern-App für Zahlen bis 100 (Klasse 2), angelehnt an die *Idee* des Blitzrechne
 8. `sprechen` **Sprech-Probe** – laut sprechen, Selbstkontrolle. Optional Spracherkennung (TEST).
 
 ## Wichtige Formate
-- **Spracherkennung:** vosk-browser (`public/vosk/vosk.js`), deutsches Modell in **zwei Teilen** `public/vosk/vosk-model-small-de-0.15.tar.gz.teil1/.teil2` (je ca. 23 MB, werden im Browser zusammengesetzt; GitHub-Weboberfläche erlaubt max. 25 MB pro Datei). Pro Aufgabe eine **kleine Wortliste** (`grammarFor`: Zielzahl, Zahlendreher, ±1, ±10, ein paar andere), Sicherheitsschwelle `MIN_CONF = 0.8`, Mikrofon bleibt an und puffert 1 s. Messung mit Computerstimme: 28/34 richtig, 1–2 falsch, Zahlendreher 16/16, nie fälschlich „richtig“. **Mit echten Kinderstimmen noch nicht ausreichend getestet.** Die graue „Test-Info“-Zeile ist für die Auswertung gedacht und muss vor dem echten Einsatz weg oder in den Lehrer-Bereich.
+- **Spracherkennung:** vosk-browser (`public/vosk/vosk.js`), deutsches Modell in **zwei Teilen** `public/vosk/vosk-model-small-de-0.15.tar.gz.teil1/.teil2` (je ca. 23 MB, werden im Browser zusammengesetzt; GitHub-Weboberfläche erlaubt max. 25 MB pro Datei). Pro Aufgabe eine **kleine Wortliste** (`grammarFor`: Zielzahl, Zahlendreher, ±1, ±10, ein paar andere), Sicherheitsschwelle `MIN_CONF = 0.8`, Mikrofon bleibt an und puffert 1 s. Messung mit Computerstimme: 28/34 richtig, 1–2 falsch, Zahlendreher 16/16, nie fälschlich „richtig“. **Mit echten Kinderstimmen noch nicht ausreichend getestet.** Seit 11.10.2026 ist die Erkennung **standardmäßig an**; die graue „Test-Info“-Zeile erscheint nur noch mit Haken im Lehrer-Bereich bzw. `?testinfo=1`.
 - **Zahlen-Ansage:** `public/audio/thorsten/1–100.mp3` (**Standard, von der Lehrkraft bevorzugt**), `public/audio/ramona/…`. 0,35 s Stille vorne, damit Tablets den Anfang nicht abschneiden. Neu erzeugen: `werkzeuge/stimmen_erzeugen.py`.
 
 ## Eigene Stimme (geplant)
