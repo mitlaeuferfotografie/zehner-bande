@@ -1908,7 +1908,7 @@ function ImpressumModal({ onClose, section }) {
             – Symbole: Lucide (ISC-Lizenz)<br />
             – React (MIT-Lizenz), Tailwind CSS (MIT-Lizenz)<br />
             – Spracherkennung: vosk-browser und deutsches Vosk-Sprachmodell von Alpha Cephei (Apache-Lizenz 2.0)<br />
-            – Zahlen-Ansage, erzeugt mit Piper (MIT-Lizenz): Stimme „Thorsten“ auf Basis von Thorsten-Voice von Thorsten Müller (CC0), Stimme „Ramona“ auf Basis des M-AILABS Speech Dataset (M-AILABS-Lizenz, Aufnahmen von LibriVox)<br />
+            – Zahlen-Ansage, erzeugt mit Piper (MIT-Lizenz): Stimme „Thorsten“: Piper-Modell „thorsten-high“ mit den Sprachdaten von Thorsten-Voice von Thorsten Müller (CC0), feingetunt aus der englischen Piper-Stimme „Lessac“ (deren Sprachdaten nur für nicht-kommerzielle Nutzung); Stimme „Ramona“ auf Basis des M-AILABS Speech Dataset (M-AILABS-Lizenz, Aufnahmen von LibriVox)<br />
             – Ziffern-Erkennung: trainiert mit dem MNIST-Datensatz von Y. LeCun, C. Cortes und C. J. C. Burges (CC BY-SA 3.0)
           </p>
           <H2 innerRef={datenschutzRef}>Datenschutz</H2>

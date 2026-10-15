@@ -1,14 +1,19 @@
 """Erzeugt die Zahlen-Ansage public/audio/<stimme>/1.mp3 … 100.mp3 und prüft jede Datei mit Vosk.
 
 Voraussetzungen (einmalig):
-  pip install piper-tts vosk          (vosk braucht evtl. zusätzlich: pip install srt)
+  pip install piper-tts numpy vosk    (vosk braucht evtl. zusätzlich: pip install srt)
   ffmpeg im PATH
-  Piper-Stimme v0.0.2 laden und entpacken, z. B.
-    https://github.com/rhasspy/piper/releases/download/v0.0.2/voice-de-thorsten-low.tar.gz
+  Piper-Stimme laden (nicht ins Repo legen), für Thorsten seit 15.10.2026 das bessere „high“-Modell:
+    https://huggingface.co/rhasspy/piper-voices/tree/main/de/de_DE/thorsten/high
+    (de_DE-thorsten-high.onnx und de_DE-thorsten-high.onnx.json in denselben Ordner)
   Vosk-Modell entpackt (vosk-model-small-de-0.15, siehe public/vosk/LIESMICH.txt)
 
 Aufruf:
-  python werkzeuge/stimmen_erzeugen.py --stimme thorsten --onnx pfad/de-thorsten-low.onnx --vosk pfad/vosk-model-small-de-0.15
+  python werkzeuge/stimmen_erzeugen.py --stimme thorsten --onnx pfad/de_DE-thorsten-high.onnx --vosk pfad/vosk-model-small-de-0.15
+  --ziel ordner   schreibt die Dateien zum Anhören erst woandershin (Standard: public/audio/<stimme>)
+  --s-stimmhaft   macht das S am Wortanfang weich wie in „Sonne“ (sechs-, sieben-, sechzig, siebzig …),
+                  mit s_stimmhaft.py und den freigegebenen Werten Summen 0.55, Zischen 0.25. Für Thorsten nötig,
+                  weil er jedes S am Wortanfang scharf spricht (die 6 klang wie „Sex“).
 Eigene Aufnahmen (Stimme der Lehrkraft) brauchen dieses Skript nicht – siehe CLAUDE.md, Abschnitt „Eigene Stimme“.
 """
 import argparse, json, os, subprocess, wave
@@ -43,6 +48,8 @@ def main():
     ap.add_argument('--onnx', required=True)
     ap.add_argument('--vosk', required=True)
     ap.add_argument('--tempo', type=float, default=1.35, help='length_scale: größer = langsamer')
+    ap.add_argument('--ziel', help='Ausgabeordner (Standard: public/audio/<stimme>)')
+    ap.add_argument('--s-stimmhaft', action='store_true', help='S am Wortanfang weich machen (s_stimmhaft.py)')
     a = ap.parse_args()
     from piper import PiperVoice
     from piper.config import SynthesisConfig
@@ -51,26 +58,34 @@ def main():
     voice = PiperVoice.load(a.onnx)
     model = Model(a.vosk)
     grammar = json.dumps([zahlwort(n) for n in range(1, 101)] + ['[unk]'], ensure_ascii=False)
+    if a.s_stimmhaft:
+        from s_stimmhaft import stimmhaft  # liegt im selben Ordner
 
     def erkannt(mp3):
         pcm = subprocess.run(['ffmpeg', '-loglevel', 'error', '-i', mp3, '-ar', '16000', '-ac', '1', '-f', 's16le', '-'], capture_output=True).stdout + b'\0' * 32000
         r = KaldiRecognizer(model, 16000, grammar); r.AcceptWaveform(pcm)
         return json.loads(r.FinalResult())['text'].replace(' ', '').replace('[unk]', '')
 
-    out = os.path.join('public', 'audio', a.stimme)
+    out = a.ziel or os.path.join('public', 'audio', a.stimme)
     os.makedirs(out, exist_ok=True)
     # Wenn eine Datei nicht verständlich ist: mit anderen Einstellungen neu versuchen
     varianten = [(a.tempo, 0.35, 0.35), (1.6, 0.3, 0.3), (1.3, 0.5, 0.5), (1.5, 0.2, 0.2), (1.7, 0.4, 0.3), (1.4, 0.6, 0.6)] * 3
     for n in range(1, 101):
+        wort, ziel = zahlwort(n), os.path.join(out, f'{n}.mp3')
+        weich = a.s_stimmhaft and wort.startswith('s')
         ok = False
         for ls, ns, nw in varianten:
-            with wave.open('_tmp.wav', 'wb') as w:
-                voice.synthesize_wav(zahlwort(n) + '.', w, syn_config=SynthesisConfig(length_scale=ls, noise_scale=ns, noise_w_scale=nw))
-            to_mp3('_tmp.wav', os.path.join(out, f'{n}.mp3'))
-            if erkannt(os.path.join(out, f'{n}.mp3')) == zahlwort(n):
+            if weich:
+                stimmhaft(voice, wort, ziel, tempo=ls)  # Summen 0.55, Zischen 0.25 (freigegeben)
+            else:
+                with wave.open('_tmp.wav', 'wb') as w:
+                    voice.synthesize_wav(wort + '.', w, syn_config=SynthesisConfig(length_scale=ls, noise_scale=ns, noise_w_scale=nw))
+                to_mp3('_tmp.wav', ziel)
+            if erkannt(ziel) == wort:
                 ok = True; break
-        print(n, zahlwort(n), 'ok' if ok else 'UNDEUTLICH – bitte anhören')
-    os.remove('_tmp.wav')
+        print(n, wort, ('weiches S, ' if weich else '') + ('ok' if ok else 'UNDEUTLICH – bitte anhören'), flush=True)
+    if os.path.exists('_tmp.wav'):
+        os.remove('_tmp.wav')
 
 
 if __name__ == '__main__':
